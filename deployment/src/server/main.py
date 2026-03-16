@@ -1,8 +1,10 @@
 import time
 import uuid
+from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 
 from classifier import classify_image
@@ -227,6 +229,23 @@ def play(req: PlayRequest):
         "player_score": player_score,
         "server_score": server_score,
     }
+
+
+# --- Admin: SPA (dashboard + settings) ---
+
+_ADMIN_HTML_PATH = Path(__file__).parent / "admin.html"
+
+
+@app.get("/admin", response_class=HTMLResponse)
+def admin_app():
+    """Serve the admin SPA (Dashboard, Settings, etc.)."""
+    return HTMLResponse(content=_ADMIN_HTML_PATH.read_text(encoding="utf-8"))
+
+
+@app.get("/admin/dashboard", response_class=RedirectResponse)
+def admin_dashboard_redirect():
+    """Redirect to admin SPA dashboard view."""
+    return RedirectResponse(url="/admin#dashboard", status_code=302)
 
 
 # --- Admin: monitoring APIs ---
