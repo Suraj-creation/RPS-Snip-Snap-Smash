@@ -7,29 +7,17 @@ from pydantic import BaseModel
 
 from classifier import classify_image
 from game import random_move, decide_winner
+import db
 
 app = FastAPI(title="Rock Paper Scissors ML Experiment")
 
-# Per-session state: session_id -> { user_id, max_rounds, round_number, player_score, server_score, round_history, winner, created_at, last_activity_at }
+# Per-session state (from DB): { session_id?, user_id, max_rounds, round_number, ... }
 SessionState = dict
-sessions: dict[str, SessionState] = {}
 
-# In-memory config (0 = unlimited for max_sessions; 0 = no timeout for session_timeout_seconds)
-config: dict[str, Any] = {
-    "max_rounds": 5,
-    "max_sessions": 0,
-    "session_timeout_seconds": 0,
-}
 
-# Aggregate game statistics
-game_stats: dict[str, int] = {
-    "total_sessions_created": 0,
-    "total_matches_completed": 0,
-    "total_rounds_played": 0,
-    "player_wins": 0,
-    "server_wins": 0,
-    "draws": 0,
-}
+@app.on_event("startup")
+def startup():
+    db.init_db()
 
 
 class PlayRequest(BaseModel):
@@ -105,6 +93,7 @@ class ConfigUpdateRequest(BaseModel):
 
 
 def _is_session_expired(state: SessionState) -> bool:
+    config = db.get_config()
     timeout = config.get("session_timeout_seconds") or 0
     if timeout <= 0:
         return False
@@ -112,28 +101,24 @@ def _is_session_expired(state: SessionState) -> bool:
     return (time.time() - last) > timeout
 
 
-def _evict_expired_sessions() -> None:
-    to_remove = [sid for sid, state in sessions.items() if _is_session_expired(state)]
-    for sid in to_remove:
-        del sessions[sid]
-
-
 def _get_session(session_id: str) -> SessionState:
-    if session_id not in sessions:
+    state = db.get_session(session_id)
+    if state is None:
         raise HTTPException(status_code=404, detail="Session not found")
-    state = sessions[session_id]
     if _is_session_expired(state):
-        del sessions[session_id]
+        db.delete_session(session_id)
         raise HTTPException(status_code=404, detail="Session expired")
+    state["session_id"] = session_id
     return state
 
 
 @app.post("/sessions", response_model=SessionResponse)
 def create_session(body: Optional[CreateSessionRequest] = None):
     """Create a new game session. Optionally pass user_id in the request body. Use the returned session_id for /play."""
-    _evict_expired_sessions()
+    db.evict_expired_sessions()
+    config = db.get_config()
     max_sessions = config.get("max_sessions") or 0
-    if max_sessions > 0 and len(sessions) >= max_sessions:
+    if max_sessions > 0 and db.count_sessions() >= max_sessions:
         raise HTTPException(
             status_code=503,
             detail=f"Max sessions limit reached ({max_sessions}). Try again later.",
@@ -142,23 +127,12 @@ def create_session(body: Optional[CreateSessionRequest] = None):
     max_rounds = config.get("max_rounds") or 5
     now = time.time()
     session_id = str(uuid.uuid4())
-    sessions[session_id] = {
-        "user_id": user_id,
-        "max_rounds": max_rounds,
-        "round_number": 0,
-        "player_score": 0,
-        "server_score": 0,
-        "round_history": [],
-        "winner": None,
-        "created_at": now,
-        "last_activity_at": now,
-    }
-    game_stats["total_sessions_created"] += 1
+    db.create_session(session_id, user_id, max_rounds, now, now)
     return SessionResponse(session_id=session_id, user_id=user_id)
 
 
 def _max_rounds_for(state: SessionState) -> int:
-    return state.get("max_rounds") or config.get("max_rounds") or 5
+    return state.get("max_rounds") or db.get_config().get("max_rounds") or 5
 
 
 @app.get("/sessions/{session_id}", response_model=SessionStatus)
@@ -182,7 +156,7 @@ def get_session(session_id: str):
 def play(req: PlayRequest):
     """Play one round in the given session. Match is complete after max_rounds (config)."""
     state = _get_session(req.session_id)
-    state["last_activity_at"] = time.time()
+    now = time.time()
     max_rounds = _max_rounds_for(state)
 
     if state["round_number"] >= max_rounds:
@@ -195,54 +169,63 @@ def play(req: PlayRequest):
     server_move = random_move()
     round_winner = decide_winner(player_move, server_move)
 
+    player_score = state["player_score"]
+    server_score = state["server_score"]
     if round_winner == "player":
-        state["player_score"] += 1
+        player_score += 1
     elif round_winner == "server":
-        state["server_score"] += 1
+        server_score += 1
 
-    state["round_number"] += 1
-    game_stats["total_rounds_played"] += 1
+    round_number = state["round_number"] + 1
     round_result = RoundResult(
-        round=state["round_number"],
+        round=round_number,
         player_move=player_move,
         server_move=server_move,
         round_winner=round_winner,
-        player_score=state["player_score"],
-        server_score=state["server_score"],
+        player_score=player_score,
+        server_score=server_score,
     )
-    state["round_history"].append(round_result.model_dump())
-
-    if state["round_number"] >= max_rounds:
-        if state["player_score"] > state["server_score"]:
-            state["winner"] = "player"
-            game_stats["player_wins"] += 1
-        elif state["server_score"] > state["player_score"]:
-            state["winner"] = "server"
-            game_stats["server_wins"] += 1
+    round_history = state["round_history"] + [round_result.model_dump()]
+    winner = None
+    if round_number >= max_rounds:
+        if player_score > server_score:
+            winner = "player"
+        elif server_score > player_score:
+            winner = "server"
         else:
-            state["winner"] = "draw"
-            game_stats["draws"] += 1
-        game_stats["total_matches_completed"] += 1
+            winner = "draw"
+        db.record_match_result(winner)
 
+    db.update_session_after_play(
+        req.session_id,
+        round_number,
+        player_score,
+        server_score,
+        winner,
+        round_history,
+        now,
+    )
+
+    if round_number >= max_rounds:
         return {
             "match_complete": True,
-            "round": state["round_number"],
+            "round": round_number,
             "player_move": player_move,
             "server_move": server_move,
             "round_winner": round_winner,
-            "player_score": state["player_score"],
-            "server_score": state["server_score"],
-            "winner": state["winner"],
+            "player_score": player_score,
+            "server_score": server_score,
+            "winner": winner,
         }
 
     return {
         "match_complete": False,
-        "round": state["round_number"],
+        "round": round_number,
         "player_move": player_move,
         "server_move": server_move,
         "round_winner": round_winner,
-        "player_score": state["player_score"],
-        "server_score": state["server_score"],
+        "player_score": player_score,
+        "server_score": server_score,
     }
 
 
@@ -251,9 +234,9 @@ def play(req: PlayRequest):
 @app.get("/admin/monitor/sessions", response_model=list[MonitorSessionSummary])
 def admin_list_sessions():
     """List all sessions (active and expired). Expired sessions are still shown with expired=true until evicted."""
-    _evict_expired_sessions()
+    db.evict_expired_sessions()
     result = []
-    for sid, state in sessions.items():
+    for sid, state in db.list_sessions():
         max_rounds = state.get("max_rounds") or 5
         result.append(
             MonitorSessionSummary(
@@ -276,15 +259,16 @@ def admin_list_sessions():
 @app.get("/admin/monitor/game_stats", response_model=GameStatsResponse)
 def admin_game_stats():
     """Aggregate game statistics (sessions, matches, rounds, wins)."""
-    _evict_expired_sessions()
+    db.evict_expired_sessions()
+    stats = db.get_game_stats()
     return GameStatsResponse(
-        total_sessions_created=game_stats["total_sessions_created"],
-        total_matches_completed=game_stats["total_matches_completed"],
-        total_rounds_played=game_stats["total_rounds_played"],
-        player_wins=game_stats["player_wins"],
-        server_wins=game_stats["server_wins"],
-        draws=game_stats["draws"],
-        active_sessions=len(sessions),
+        total_sessions_created=stats["total_sessions_created"],
+        total_matches_completed=stats["total_matches_completed"],
+        total_rounds_played=stats["total_rounds_played"],
+        player_wins=stats["player_wins"],
+        server_wins=stats["server_wins"],
+        draws=stats["draws"],
+        active_sessions=db.count_sessions(),
     )
 
 
@@ -293,6 +277,7 @@ def admin_game_stats():
 @app.get("/admin/cfg", response_model=ConfigResponse)
 def admin_get_config():
     """Return current server configuration."""
+    config = db.get_config()
     return ConfigResponse(
         max_rounds=config.get("max_rounds", 5),
         max_sessions=config.get("max_sessions", 0),
@@ -303,16 +288,15 @@ def admin_get_config():
 @app.put("/admin/cfg", response_model=ConfigResponse)
 def admin_update_config(body: ConfigUpdateRequest):
     """Update configuration. Only provided fields are changed. 0 = unlimited for max_sessions, no timeout for session_timeout_seconds."""
-    if body.max_rounds is not None:
-        if body.max_rounds < 1:
-            raise HTTPException(status_code=400, detail="max_rounds must be at least 1")
-        config["max_rounds"] = body.max_rounds
-    if body.max_sessions is not None:
-        if body.max_sessions < 0:
-            raise HTTPException(status_code=400, detail="max_sessions cannot be negative")
-        config["max_sessions"] = body.max_sessions
-    if body.session_timeout_seconds is not None:
-        if body.session_timeout_seconds < 0:
-            raise HTTPException(status_code=400, detail="session_timeout_seconds cannot be negative")
-        config["session_timeout_seconds"] = body.session_timeout_seconds
+    if body.max_rounds is not None and body.max_rounds < 1:
+        raise HTTPException(status_code=400, detail="max_rounds must be at least 1")
+    if body.max_sessions is not None and body.max_sessions < 0:
+        raise HTTPException(status_code=400, detail="max_sessions cannot be negative")
+    if body.session_timeout_seconds is not None and body.session_timeout_seconds < 0:
+        raise HTTPException(status_code=400, detail="session_timeout_seconds cannot be negative")
+    db.set_config(
+        max_rounds=body.max_rounds,
+        max_sessions=body.max_sessions,
+        session_timeout_seconds=body.session_timeout_seconds,
+    )
     return admin_get_config()

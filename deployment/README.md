@@ -25,6 +25,7 @@ replaced with a real image classification model.
 
     server/
         main.py          # FastAPI server
+        db.py            # SQLite state (sessions, config, game stats)
         game.py          # Game rules and random server move
         classifier.py    # Stub image classifier
 
@@ -126,6 +127,15 @@ After five rounds:
     Player Score: 3
     Server Score: 2
     Winner: player
+
+------------------------------------------------------------------------
+
+## State Storage
+
+Sessions, configuration, and game statistics are stored in **SQLite**. By
+default the database is **in-memory** (`:memory:`), so data is lost when the
+server stops. To persist state, set the `DB_PATH` in `server/db.py` to a file
+path (e.g. `"state.db"`).
 
 ------------------------------------------------------------------------
 
