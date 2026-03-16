@@ -1,9 +1,11 @@
 """
 SQLite-backed state for sessions, config, and game stats.
 Use :memory: for in-memory DB (single connection).
+Access is serialized with a lock to avoid "database is locked" under concurrent requests.
 """
 import json
 import sqlite3
+import threading
 import time
 from typing import Any, Optional
 
@@ -11,13 +13,17 @@ from typing import Any, Optional
 DB_PATH = ":memory:"
 
 _conn: Optional[sqlite3.Connection] = None
+_lock = threading.RLock()
 
 
 def get_conn() -> sqlite3.Connection:
     global _conn
     if _conn is None:
-        _conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+        _conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=10.0)
         _conn.row_factory = sqlite3.Row
+        _conn.execute("PRAGMA busy_timeout = 10000")  # wait up to 10s if locked
+        if DB_PATH != ":memory:":
+            _conn.execute("PRAGMA journal_mode = WAL")
     return _conn
 
 
@@ -26,8 +32,9 @@ def init_db(path: Optional[str] = None) -> None:
     global DB_PATH
     if path is not None:
         DB_PATH = path
-    conn = get_conn()
-    conn.executescript("""
+    with _lock:
+        conn = get_conn()
+        conn.executescript("""
         CREATE TABLE IF NOT EXISTS config (
             id INTEGER PRIMARY KEY CHECK (id = 1),
             max_rounds INTEGER NOT NULL DEFAULT 5,
@@ -37,13 +44,13 @@ def init_db(path: Optional[str] = None) -> None:
         );
         INSERT OR IGNORE INTO config (id, max_rounds, max_sessions, session_timeout_seconds, retention_seconds)
         VALUES (1, 5, 10, 0, 604800);
-    """)
-    try:
-        conn.execute("ALTER TABLE config ADD COLUMN retention_seconds INTEGER NOT NULL DEFAULT 604800")
-        conn.commit()
-    except sqlite3.OperationalError:
-        pass
-    conn.executescript("""
+        """)
+        try:
+            conn.execute("ALTER TABLE config ADD COLUMN retention_seconds INTEGER NOT NULL DEFAULT 604800")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
+        conn.executescript("""
 
         CREATE TABLE IF NOT EXISTS game_stats (
             id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -68,32 +75,33 @@ def init_db(path: Optional[str] = None) -> None:
             last_activity_at REAL NOT NULL,
             round_history TEXT NOT NULL DEFAULT '[]'
         );
-    """)
-    conn.commit()
+        """)
+        conn.commit()
 
 
 def get_config() -> dict[str, Any]:
-    conn = get_conn()
-    try:
-        row = conn.execute(
-            "SELECT max_rounds, max_sessions, session_timeout_seconds, retention_seconds FROM config WHERE id = 1"
-        ).fetchone()
-    except sqlite3.OperationalError:
-        row = conn.execute(
-            "SELECT max_rounds, max_sessions, session_timeout_seconds FROM config WHERE id = 1"
-        ).fetchone()
-    if not row:
-        return {"max_rounds": 5, "max_sessions": 10, "session_timeout_seconds": 0, "retention_seconds": 604800}
-    out = {
-        "max_rounds": row["max_rounds"],
-        "max_sessions": row["max_sessions"],
-        "session_timeout_seconds": row["session_timeout_seconds"],
-    }
-    try:
-        out["retention_seconds"] = row["retention_seconds"]
-    except (KeyError, IndexError):
-        out["retention_seconds"] = 604800
-    return out
+    with _lock:
+        conn = get_conn()
+        try:
+            row = conn.execute(
+                "SELECT max_rounds, max_sessions, session_timeout_seconds, retention_seconds FROM config WHERE id = 1"
+            ).fetchone()
+        except sqlite3.OperationalError:
+            row = conn.execute(
+                "SELECT max_rounds, max_sessions, session_timeout_seconds FROM config WHERE id = 1"
+            ).fetchone()
+        if not row:
+            return {"max_rounds": 5, "max_sessions": 10, "session_timeout_seconds": 0, "retention_seconds": 604800}
+        out = {
+            "max_rounds": row["max_rounds"],
+            "max_sessions": row["max_sessions"],
+            "session_timeout_seconds": row["session_timeout_seconds"],
+        }
+        try:
+            out["retention_seconds"] = row["retention_seconds"]
+        except (KeyError, IndexError):
+            out["retention_seconds"] = 604800
+        return out
 
 
 def set_config(
@@ -119,8 +127,10 @@ def set_config(
         params.append(retention_seconds)
     if updates:
         params.append(1)
-        conn.execute(f"UPDATE config SET {', '.join(updates)} WHERE id = ?", params)
-        conn.commit()
+        with _lock:
+            conn = get_conn()
+            conn.execute(f"UPDATE config SET {', '.join(updates)} WHERE id = ?", params)
+            conn.commit()
 
 
 def _row_to_session(row: sqlite3.Row) -> dict[str, Any]:
@@ -138,21 +148,23 @@ def _row_to_session(row: sqlite3.Row) -> dict[str, Any]:
 
 
 def get_session(session_id: str) -> Optional[dict[str, Any]]:
-    conn = get_conn()
-    row = conn.execute(
-        "SELECT * FROM sessions WHERE session_id = ?", (session_id,)
-    ).fetchone()
-    if not row:
-        return None
-    state = _row_to_session(row)
-    state["session_id"] = row["session_id"]
-    return state
+    with _lock:
+        conn = get_conn()
+        row = conn.execute(
+            "SELECT * FROM sessions WHERE session_id = ?", (session_id,)
+        ).fetchone()
+        if not row:
+            return None
+        state = _row_to_session(row)
+        state["session_id"] = row["session_id"]
+        return state
 
 
 def list_sessions() -> list[tuple[str, dict[str, Any]]]:
-    conn = get_conn()
-    rows = conn.execute("SELECT * FROM sessions").fetchall()
-    return [(row["session_id"], _row_to_session(row)) for row in rows]
+    with _lock:
+        conn = get_conn()
+        rows = conn.execute("SELECT * FROM sessions").fetchall()
+        return [(row["session_id"], _row_to_session(row)) for row in rows]
 
 
 def create_session(
@@ -162,16 +174,17 @@ def create_session(
     created_at: float,
     last_activity_at: float,
 ) -> None:
-    conn = get_conn()
-    conn.execute(
-        """INSERT INTO sessions (session_id, user_id, max_rounds, round_number, player_score, server_score, winner, created_at, last_activity_at, round_history)
-           VALUES (?, ?, ?, 0, 0, 0, NULL, ?, ?, '[]')""",
-        (session_id, user_id, max_rounds, created_at, last_activity_at),
-    )
-    conn.execute(
-        "UPDATE game_stats SET total_sessions_created = total_sessions_created + 1 WHERE id = 1"
-    )
-    conn.commit()
+    with _lock:
+        conn = get_conn()
+        conn.execute(
+            """INSERT INTO sessions (session_id, user_id, max_rounds, round_number, player_score, server_score, winner, created_at, last_activity_at, round_history)
+               VALUES (?, ?, ?, 0, 0, 0, NULL, ?, ?, '[]')""",
+            (session_id, user_id, max_rounds, created_at, last_activity_at),
+        )
+        conn.execute(
+            "UPDATE game_stats SET total_sessions_created = total_sessions_created + 1 WHERE id = 1"
+        )
+        conn.commit()
 
 
 def update_session_after_play(
@@ -183,43 +196,47 @@ def update_session_after_play(
     round_history: list[dict],
     last_activity_at: float,
 ) -> None:
-    conn = get_conn()
-    conn.execute(
-        """UPDATE sessions SET round_number = ?, player_score = ?, server_score = ?, winner = ?, round_history = ?, last_activity_at = ?
-           WHERE session_id = ?""",
-        (round_number, player_score, server_score, winner, json.dumps(round_history), last_activity_at, session_id),
-    )
-    conn.execute(
-        "UPDATE game_stats SET total_rounds_played = total_rounds_played + 1 WHERE id = 1"
-    )
-    conn.commit()
+    with _lock:
+        conn = get_conn()
+        conn.execute(
+            """UPDATE sessions SET round_number = ?, player_score = ?, server_score = ?, winner = ?, round_history = ?, last_activity_at = ?
+               WHERE session_id = ?""",
+            (round_number, player_score, server_score, winner, json.dumps(round_history), last_activity_at, session_id),
+        )
+        conn.execute(
+            "UPDATE game_stats SET total_rounds_played = total_rounds_played + 1 WHERE id = 1"
+        )
+        conn.commit()
 
 
 def record_match_result(winner: str) -> None:
     """winner is 'player', 'server', or 'draw'."""
-    conn = get_conn()
-    conn.execute(
-        "UPDATE game_stats SET total_matches_completed = total_matches_completed + 1 WHERE id = 1"
-    )
-    if winner == "player":
-        conn.execute("UPDATE game_stats SET player_wins = player_wins + 1 WHERE id = 1")
-    elif winner == "server":
-        conn.execute("UPDATE game_stats SET server_wins = server_wins + 1 WHERE id = 1")
-    else:
-        conn.execute("UPDATE game_stats SET draws = draws + 1 WHERE id = 1")
-    conn.commit()
+    with _lock:
+        conn = get_conn()
+        conn.execute(
+            "UPDATE game_stats SET total_matches_completed = total_matches_completed + 1 WHERE id = 1"
+        )
+        if winner == "player":
+            conn.execute("UPDATE game_stats SET player_wins = player_wins + 1 WHERE id = 1")
+        elif winner == "server":
+            conn.execute("UPDATE game_stats SET server_wins = server_wins + 1 WHERE id = 1")
+        else:
+            conn.execute("UPDATE game_stats SET draws = draws + 1 WHERE id = 1")
+        conn.commit()
 
 
 def delete_session(session_id: str) -> None:
-    conn = get_conn()
-    conn.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
-    conn.commit()
+    with _lock:
+        conn = get_conn()
+        conn.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
+        conn.commit()
 
 
 def count_sessions() -> int:
-    conn = get_conn()
-    row = conn.execute("SELECT COUNT(*) AS n FROM sessions").fetchone()
-    return row["n"] if row else 0
+    with _lock:
+        conn = get_conn()
+        row = conn.execute("SELECT COUNT(*) AS n FROM sessions").fetchone()
+        return row["n"] if row else 0
 
 
 def count_active_sessions() -> int:
@@ -228,16 +245,17 @@ def count_active_sessions() -> int:
     if timeout <= 0:
         return count_sessions()
     now = time.time()
-    conn = get_conn()
-    rows = conn.execute(
-        "SELECT session_id, last_activity_at, created_at FROM sessions"
-    ).fetchall()
-    n = 0
-    for row in rows:
-        last = row["last_activity_at"] or row["created_at"] or 0
-        if (now - last) <= timeout:
-            n += 1
-    return n
+    with _lock:
+        conn = get_conn()
+        rows = conn.execute(
+            "SELECT session_id, last_activity_at, created_at FROM sessions"
+        ).fetchall()
+        n = 0
+        for row in rows:
+            last = row["last_activity_at"] or row["created_at"] or 0
+            if (now - last) <= timeout:
+                n += 1
+        return n
 
 
 def get_effective_session_timeout_seconds() -> int:
@@ -259,33 +277,35 @@ def prune_expired_sessions(retention_seconds: Optional[int] = None) -> int:
     retention = retention_seconds if retention_seconds is not None else (cfg.get("retention_seconds") or 604800)
     timeout = get_effective_session_timeout_seconds()
     cutoff = time.time() - timeout - retention
-    conn = get_conn()
-    rows = conn.execute(
-        "SELECT session_id, last_activity_at, created_at FROM sessions"
-    ).fetchall()
-    deleted = 0
-    for row in rows:
-        last = row["last_activity_at"] or row["created_at"] or 0
-        if last < cutoff:
-            conn.execute("DELETE FROM sessions WHERE session_id = ?", (row["session_id"],))
-            deleted += 1
-    conn.commit()
-    return deleted
+    with _lock:
+        conn = get_conn()
+        rows = conn.execute(
+            "SELECT session_id, last_activity_at, created_at FROM sessions"
+        ).fetchall()
+        deleted = 0
+        for row in rows:
+            last = row["last_activity_at"] or row["created_at"] or 0
+            if last < cutoff:
+                conn.execute("DELETE FROM sessions WHERE session_id = ?", (row["session_id"],))
+                deleted += 1
+        conn.commit()
+        return deleted
 
 
 def get_game_stats() -> dict[str, int]:
-    conn = get_conn()
-    row = conn.execute(
-        """SELECT total_sessions_created, total_matches_completed, total_rounds_played,
-                  player_wins, server_wins, draws FROM game_stats WHERE id = 1"""
-    ).fetchone()
-    if not row:
-        return {
-            "total_sessions_created": 0,
-            "total_matches_completed": 0,
-            "total_rounds_played": 0,
-            "player_wins": 0,
-            "server_wins": 0,
-            "draws": 0,
-        }
-    return dict(row)
+    with _lock:
+        conn = get_conn()
+        row = conn.execute(
+            """SELECT total_sessions_created, total_matches_completed, total_rounds_played,
+                      player_wins, server_wins, draws FROM game_stats WHERE id = 1"""
+        ).fetchone()
+        if not row:
+            return {
+                "total_sessions_created": 0,
+                "total_matches_completed": 0,
+                "total_rounds_played": 0,
+                "player_wins": 0,
+                "server_wins": 0,
+                "draws": 0,
+            }
+        return dict(row)
