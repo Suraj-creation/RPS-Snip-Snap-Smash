@@ -28,11 +28,11 @@ def init_db() -> None:
         CREATE TABLE IF NOT EXISTS config (
             id INTEGER PRIMARY KEY CHECK (id = 1),
             max_rounds INTEGER NOT NULL DEFAULT 5,
-            max_sessions INTEGER NOT NULL DEFAULT 0,
+            max_sessions INTEGER NOT NULL DEFAULT 10,
             session_timeout_seconds INTEGER NOT NULL DEFAULT 0
         );
         INSERT OR IGNORE INTO config (id, max_rounds, max_sessions, session_timeout_seconds)
-        VALUES (1, 5, 0, 0);
+        VALUES (1, 5, 10, 0);
 
         CREATE TABLE IF NOT EXISTS game_stats (
             id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -67,7 +67,7 @@ def get_config() -> dict[str, Any]:
         "SELECT max_rounds, max_sessions, session_timeout_seconds FROM config WHERE id = 1"
     ).fetchone()
     if not row:
-        return {"max_rounds": 5, "max_sessions": 0, "session_timeout_seconds": 0}
+        return {"max_rounds": 5, "max_sessions": 10, "session_timeout_seconds": 0}
     return {
         "max_rounds": row["max_rounds"],
         "max_sessions": row["max_sessions"],
@@ -193,10 +193,18 @@ def count_sessions() -> int:
     return row["n"] if row else 0
 
 
-def evict_expired_sessions() -> None:
-    """Delete sessions that have exceeded session_timeout_seconds (from config)."""
+def get_effective_session_timeout_seconds() -> int:
+    """Session expiry in seconds. When config.session_timeout_seconds is 0, returns 30 * max_rounds."""
     cfg = get_config()
     timeout = cfg.get("session_timeout_seconds") or 0
+    if timeout > 0:
+        return timeout
+    return 30 * (cfg.get("max_rounds") or 5)
+
+
+def evict_expired_sessions() -> None:
+    """Delete sessions that have exceeded the effective session timeout (30 * max_rounds when config is 0)."""
+    timeout = get_effective_session_timeout_seconds()
     if timeout <= 0:
         return
     now = time.time()

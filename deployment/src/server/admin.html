@@ -235,7 +235,7 @@
             <div class="form-group">
               <label for="cfg-timeout">Session timeout (seconds)</label>
               <input type="number" id="cfg-timeout" name="session_timeout_seconds" min="0">
-              <div class="hint">0 = no timeout. Inactive sessions are removed after this many seconds.</div>
+              <div class="hint">0 = auto (30 × rounds per game). Or set seconds for a fixed timeout.</div>
             </div>
             <div class="form-actions">
               <button type="submit" id="btn-save">Save changes</button>
@@ -281,6 +281,12 @@
       if (seconds < 3600) return Math.round(seconds / 60) + 'm';
       return Math.round(seconds / 3600) + 'h';
     }
+    function effectiveTimeoutDisplay(cfg) {
+      const s = cfg.session_timeout_seconds;
+      if (s != null && s > 0) return fmtDuration(s);
+      const auto = 30 * (cfg.max_rounds || 5);
+      return fmtDuration(auto) + ' (30×rounds)';
+    }
 
     async function loadDashboard() {
       const errEl = $('dash-error');
@@ -303,7 +309,7 @@
           </div>
           <div class="config-item">
             <label>Session timeout</label>
-            <div class="value">${fmtDuration(cfg.session_timeout_seconds)}</div>
+            <div class="value">${effectiveTimeoutDisplay(cfg)}</div>
           </div>
         `;
         $('dash-config').className = 'config-grid';

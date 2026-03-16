@@ -100,8 +100,7 @@ class ConfigUpdateRequest(BaseModel):
 
 
 def _is_session_expired(state: SessionState) -> bool:
-    config = db.get_config()
-    timeout = config.get("session_timeout_seconds") or 0
+    timeout = db.get_effective_session_timeout_seconds()
     if timeout <= 0:
         return False
     last = state.get("last_activity_at") or state.get("created_at") or 0
