@@ -8,6 +8,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 
 from admin_auth import verify_admin
+from game_auth import verify_game_user
 from classifier import classify_image
 from game import random_move, decide_winner
 import db
@@ -119,8 +120,11 @@ def _get_session(session_id: str) -> SessionState:
 
 
 @app.post("/sessions", response_model=SessionResponse)
-def create_session(body: Optional[CreateSessionRequest] = None):
-    """Create a new game session. Optionally pass user_id in the request body. Use the returned session_id for /play."""
+def create_session(
+    username: str = Depends(verify_game_user),
+    body: Optional[CreateSessionRequest] = None,
+):
+    """Create a new game session. Requires game user auth (Basic). Session user_id is set from authenticated username."""
     db.evict_expired_sessions()
     config = db.get_config()
     max_sessions = config.get("max_sessions") or 0
@@ -129,12 +133,11 @@ def create_session(body: Optional[CreateSessionRequest] = None):
             status_code=503,
             detail=f"Max sessions limit reached ({max_sessions}). Try again later.",
         )
-    user_id = body.user_id if body else None
     max_rounds = config.get("max_rounds") or 5
     now = time.time()
     session_id = str(uuid.uuid4())
-    db.create_session(session_id, user_id, max_rounds, now, now)
-    return SessionResponse(session_id=session_id, user_id=user_id)
+    db.create_session(session_id, username, max_rounds, now, now)
+    return SessionResponse(session_id=session_id, user_id=username)
 
 
 def _max_rounds_for(state: SessionState) -> int:
@@ -142,8 +145,8 @@ def _max_rounds_for(state: SessionState) -> int:
 
 
 @app.get("/sessions/{session_id}", response_model=SessionStatus)
-def get_session(session_id: str):
-    """Get current status and full history for a session."""
+def get_session(session_id: str, _username: str = Depends(verify_game_user)):
+    """Get current status and full history for a session. Requires game user auth."""
     state = _get_session(session_id)
     max_rounds = _max_rounds_for(state)
     return SessionStatus(
@@ -159,8 +162,8 @@ def get_session(session_id: str):
 
 
 @app.post("/play")
-def play(req: PlayRequest):
-    """Play one round in the given session. Match is complete after max_rounds (config)."""
+def play(req: PlayRequest, _username: str = Depends(verify_game_user)):
+    """Play one round in the given session. Requires game user auth."""
     state = _get_session(req.session_id)
     now = time.time()
     max_rounds = _max_rounds_for(state)

@@ -1,18 +1,22 @@
 import argparse
+import getpass
 import requests
+from requests.auth import HTTPBasicAuth
 
 BASE_URL = "http://localhost:9000"
 
 
-def play(user_id: str):
+def play(username: str, password: str):
     print("Rock Paper Scissors Client")
     print("--------------------------")
 
-    r = requests.post(f"{BASE_URL}/sessions", json={"user_id": user_id})
+    auth = HTTPBasicAuth(username, password)
+
+    r = requests.post(f"{BASE_URL}/sessions", json={}, auth=auth)
     r.raise_for_status()
     data = r.json()
     session_id = data["session_id"]
-    print(f"Session started: {session_id[:8]}... (user: {user_id})")
+    print(f"Session started: {session_id[:8]}... (user: {username})")
     print()
 
     while True:
@@ -21,6 +25,7 @@ def play(user_id: str):
         r = requests.post(
             f"{BASE_URL}/play",
             json={"session_id": session_id, "image": move},
+            auth=auth,
         )
         r.raise_for_status()
         data = r.json()
@@ -45,6 +50,25 @@ def play(user_id: str):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Rock Paper Scissors client")
-    parser.add_argument("user_id", help="User ID for this game session")
+    parser.add_argument(
+        "username",
+        nargs="?",
+        default="guest",
+        help="Game username (default: guest)",
+    )
+    parser.add_argument(
+        "password",
+        nargs="?",
+        default=None,
+        help="Password (default: guest; prompt if omitted when username given)",
+    )
     args = parser.parse_args()
-    play(args.user_id)
+
+    password = args.password
+    if password is None:
+        if args.username == "guest":
+            password = "guest"
+        else:
+            password = getpass.getpass(f"Password for {args.username}: ")
+
+    play(args.username, password)

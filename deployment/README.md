@@ -24,10 +24,12 @@ replaced with a real image classification model.
     README.md
 
     server/
-        main.py              # FastAPI server
-        admin_auth.py        # Admin HTTP Basic Auth (credentials from config file)
-        admin_config.json    # Admin credentials (create from .example; do not commit secrets)
-        db.py               # SQLite state (sessions, config, game stats)
+        main.py                  # FastAPI server
+        admin_auth.py            # Admin HTTP Basic Auth (credentials from config file)
+        admin_config.json        # Admin credentials (create from .example; do not commit secrets)
+        game_auth.py            # Game user auth (pre-provisioned users from config file)
+        users_config.json        # Game users username:password (optional; see Game user authentication)
+        db.py                    # SQLite state (sessions, config, game stats)
         game.py             # Game rules and random server move
         classifier.py       # Stub image classifier
 
@@ -65,6 +67,18 @@ Interactive API documentation is available at:
 
 ------------------------------------------------------------------------
 
+## Game user authentication
+
+Only **pre-provisioned users** can create sessions and play. Credentials are checked
+with **HTTP Basic Auth** against a config file.
+
+- **Default:** If `server/users_config.json` is missing, a built-in user **guest** / **guest** is allowed.
+- **Config file:** Copy `server/users_config.json.example` to `server/users_config.json` and add users as `"username": "password"` entries. The default user `guest` / `guest` can be overridden or extended there.
+
+The client sends the chosen username and password (e.g. `python client.py guest guest` or `python client.py alice` and then the password when prompted).
+
+------------------------------------------------------------------------
+
 ## Running the Client
 
 Open another terminal and run:
@@ -72,6 +86,22 @@ Open another terminal and run:
 ``` bash
 cd client
 python client.py
+```
+
+With default user (guest/guest):
+
+``` bash
+python client.py
+# or
+python client.py guest guest
+```
+
+With another user (password prompted if omitted):
+
+``` bash
+python client.py alice
+# or
+python client.py alice your-password
 ```
 
 You will be prompted to enter a move:
