@@ -21,8 +21,13 @@ class PlayRequest(BaseModel):
     image: str
 
 
+class CreateSessionRequest(BaseModel):
+    user_id: Optional[str] = None
+
+
 class SessionResponse(BaseModel):
     session_id: str
+    user_id: Optional[str] = None
 
 
 class RoundResult(BaseModel):
@@ -36,6 +41,7 @@ class RoundResult(BaseModel):
 
 class SessionStatus(BaseModel):
     session_id: str
+    user_id: Optional[str] = None
     round_number: int
     player_score: int
     server_score: int
@@ -51,17 +57,19 @@ def _get_session(session_id: str) -> SessionState:
 
 
 @app.post("/sessions", response_model=SessionResponse)
-def create_session():
-    """Create a new game session. Use the returned session_id for /play."""
+def create_session(body: Optional[CreateSessionRequest] = None):
+    """Create a new game session. Optionally pass user_id in the request body. Use the returned session_id for /play."""
+    user_id = body.user_id if body else None
     session_id = str(uuid.uuid4())
     sessions[session_id] = {
+        "user_id": user_id,
         "round_number": 0,
         "player_score": 0,
         "server_score": 0,
         "round_history": [],
         "winner": None,
     }
-    return SessionResponse(session_id=session_id)
+    return SessionResponse(session_id=session_id, user_id=user_id)
 
 
 @app.get("/sessions/{session_id}", response_model=SessionStatus)
@@ -70,6 +78,7 @@ def get_session(session_id: str):
     state = _get_session(session_id)
     return SessionStatus(
         session_id=session_id,
+        user_id=state.get("user_id"),
         round_number=state["round_number"],
         player_score=state["player_score"],
         server_score=state["server_score"],

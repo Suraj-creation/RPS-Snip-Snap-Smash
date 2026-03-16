@@ -1,16 +1,18 @@
+import argparse
 import requests
 
 BASE_URL = "http://localhost:9000"
 
 
-def play():
+def play(user_id: str):
     print("Rock Paper Scissors Client")
     print("--------------------------")
 
-    r = requests.post(f"{BASE_URL}/sessions")
+    r = requests.post(f"{BASE_URL}/sessions", json={"user_id": user_id})
     r.raise_for_status()
-    session_id = r.json()["session_id"]
-    print(f"Session started: {session_id[:8]}...")
+    data = r.json()
+    session_id = data["session_id"]
+    print(f"Session started: {session_id[:8]}... (user: {user_id})")
     print()
 
     while True:
@@ -42,4 +44,7 @@ def play():
 
 
 if __name__ == "__main__":
-    play()
+    parser = argparse.ArgumentParser(description="Rock Paper Scissors client")
+    parser.add_argument("user_id", help="User ID for this game session")
+    args = parser.parse_args()
+    play(args.user_id)
