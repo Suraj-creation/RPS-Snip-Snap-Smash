@@ -121,6 +121,32 @@
       cursor: pointer;
     }
     .toggle-label input { cursor: pointer; }
+    .sessions-toolbar { margin-bottom: 0.75rem; }
+    .sessions-toolbar select {
+      margin-left: 0.5rem;
+      padding: 0.25rem 0.5rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      font-size: 0.875rem;
+    }
+    .pagination-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-top: 1rem;
+      padding-top: 0.75rem;
+      border-top: 1px solid var(--border);
+      font-size: 0.875rem;
+      color: var(--muted);
+    }
+    .pagination-bar button {
+      padding: 0.35rem 0.75rem;
+      font-size: 0.8rem;
+    }
+    .pagination-bar button:disabled { opacity: 0.4; cursor: default; }
     .config-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 1rem; }
     .config-item {
       padding: 0.75rem;
@@ -249,7 +275,20 @@
             </div>
           </div>
           <div id="prune-result" class="success" style="display: none;"></div>
+          <div class="sessions-toolbar">
+            <label class="toggle-label">
+              Per page
+              <select id="sessions-per-page">
+                <option value="5" selected>5</option>
+                <option value="10">10</option>
+                <option value="25">25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+            </label>
+          </div>
           <div id="dash-sessions" class="loading">Loading…</div>
+          <div id="sessions-pagination" class="pagination-bar" style="display: none;"></div>
         </section>
       </div>
 
@@ -331,6 +370,60 @@
       return fmtDuration(auto) + ' (30×rounds)';
     }
 
+    function renderSessionsPage() {
+      const sessions = window._sessionsList || [];
+      const perPage = Math.max(1, parseInt($('sessions-per-page').value, 10) || 5);
+      const totalPages = Math.max(1, Math.ceil(sessions.length / perPage));
+      let page = Math.min(Math.max(1, window._sessionsPage || 1), totalPages);
+      window._sessionsPage = page;
+      const start = (page - 1) * perPage;
+      const slice = sessions.slice(start, start + perPage);
+
+      $('dash-sessions').innerHTML = `
+        <table>
+          <thead>
+            <tr>
+              <th>Session</th><th>User</th><th>Round</th><th>Score</th><th>Status</th><th>Winner</th><th>Created</th><th>Last activity</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${slice.map(s => `
+              <tr>
+                <td><span class="session-id" title="${s.session_id}">${s.session_id.slice(0, 8)}…</span></td>
+                <td>${s.user_id || '—'}</td>
+                <td>${s.round_number} / ${s.max_rounds}</td>
+                <td>${s.player_score} – ${s.server_score}</td>
+                <td>
+                  ${s.expired ? '<span class="badge expired">Expired</span>' : s.match_complete ? '<span class="badge complete">Complete</span>' : '<span class="badge active">Active</span>'}
+                </td>
+                <td>${s.winner || '—'}</td>
+                <td>${fmtTime(s.created_at)}</td>
+                <td>${fmtTime(s.last_activity_at)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+
+      const paginationEl = $('sessions-pagination');
+      const from = start + 1;
+      const to = Math.min(start + perPage, sessions.length);
+      paginationEl.innerHTML = `
+        <span>Showing ${from}–${to} of ${sessions.length}</span>
+        <div>
+          <button type="button" id="sessions-prev" ${page <= 1 ? 'disabled' : ''}>Previous</button>
+          <span style="margin: 0 0.5rem;">Page ${page} of ${totalPages}</span>
+          <button type="button" id="sessions-next" ${page >= totalPages ? 'disabled' : ''}>Next</button>
+        </div>
+      `;
+      paginationEl.style.display = 'flex';
+
+      const prevBtn = document.getElementById('sessions-prev');
+      const nextBtn = document.getElementById('sessions-next');
+      if (prevBtn && !prevBtn.disabled) prevBtn.addEventListener('click', () => { window._sessionsPage = page - 1; renderSessionsPage(); });
+      if (nextBtn && !nextBtn.disabled) nextBtn.addEventListener('click', () => { window._sessionsPage = page + 1; renderSessionsPage(); });
+    }
+
     async function loadDashboard() {
       const errEl = $('dash-error');
       errEl.style.display = 'none';
@@ -373,34 +466,13 @@
         `;
         $('dash-stats').className = 'stats-grid';
 
+        window._sessionsList = sessions;
+        window._sessionsPage = 1;
         if (sessions.length === 0) {
           $('dash-sessions').innerHTML = '<p class="muted">' + (includeExpired ? 'No sessions.' : 'No active sessions.') + '</p>';
+          $('sessions-pagination').style.display = 'none';
         } else {
-          $('dash-sessions').innerHTML = `
-            <table>
-              <thead>
-                <tr>
-                  <th>Session</th><th>User</th><th>Round</th><th>Score</th><th>Status</th><th>Winner</th><th>Created</th><th>Last activity</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${sessions.map(s => `
-                  <tr>
-                    <td><span class="session-id" title="${s.session_id}">${s.session_id.slice(0, 8)}…</span></td>
-                    <td>${s.user_id || '—'}</td>
-                    <td>${s.round_number} / ${s.max_rounds}</td>
-                    <td>${s.player_score} – ${s.server_score}</td>
-                    <td>
-                      ${s.expired ? '<span class="badge expired">Expired</span>' : s.match_complete ? '<span class="badge complete">Complete</span>' : '<span class="badge active">Active</span>'}
-                    </td>
-                    <td>${s.winner || '—'}</td>
-                    <td>${fmtTime(s.created_at)}</td>
-                    <td>${fmtTime(s.last_activity_at)}</td>
-                  </tr>
-                `).join('')}
-              </tbody>
-            </table>
-          `;
+          renderSessionsPage();
         }
         $('dash-sessions').className = '';
         $('updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
@@ -412,6 +484,10 @@
 
     $('btn-refresh').addEventListener('click', loadDashboard);
     $('toggle-expired').addEventListener('change', loadDashboard);
+    $('sessions-per-page').addEventListener('change', () => {
+      window._sessionsPage = 1;
+      if (window._sessionsList && window._sessionsList.length > 0) renderSessionsPage();
+    });
 
     $('btn-prune').addEventListener('click', async () => {
       const btn = $('btn-prune');

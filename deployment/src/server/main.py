@@ -303,6 +303,7 @@ def admin_list_sessions(include_expired: bool = False):
                 expired=expired,
             )
         )
+    result.sort(key=lambda x: (x.last_activity_at or 0, x.created_at or 0), reverse=True)
     return result
 
 
