@@ -1,0 +1,9 @@
+{
+  "base_url": "http://localhost:9000",
+  "users": [
+    { "username": "usr1", "password": "pwd1" },
+    { "username": "usr2", "password": "pwd2" },
+    { "username": "usr3", "password": "pwd3" },
+    { "username": "guest", "password": "guest" }
+  ]
+}

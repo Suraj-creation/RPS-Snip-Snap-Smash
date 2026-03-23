@@ -309,3 +309,28 @@ def get_game_stats() -> dict[str, int]:
                 "draws": 0,
             }
         return dict(row)
+
+
+def get_win_breakdown_since(since_timestamp: float) -> dict[str, int]:
+    """Count completed matches by winner since since_timestamp (Unix epoch)."""
+    with _lock:
+        conn = get_conn()
+        rows = conn.execute(
+            """
+            SELECT winner, COUNT(*) AS c FROM sessions
+            WHERE winner IS NOT NULL AND last_activity_at >= ?
+            GROUP BY winner
+            """,
+            (since_timestamp,),
+        ).fetchall()
+    out = {"player_wins": 0, "server_wins": 0, "draws": 0}
+    for row in rows:
+        w = row["winner"]
+        c = row["c"]
+        if w == "player":
+            out["player_wins"] = c
+        elif w == "server":
+            out["server_wins"] = c
+        elif w == "draw":
+            out["draws"] = c
+    return out

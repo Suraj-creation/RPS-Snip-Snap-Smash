@@ -37,6 +37,10 @@ replaced with a real image classification model.
     client/
         client.py        # Simple CLI client
 
+    simulator/
+        simulator.py              # Simulator (many games; client loops POST /play)
+        simulator_config.json     # Optional: base_url + users list
+
 ------------------------------------------------------------------------
 
 ## Installation
@@ -82,7 +86,7 @@ The client sends the chosen username and password (e.g. `python client.py guest 
 
 ## Running the Client
 
-Open another terminal and run:
+The CLI uses **one `POST /play` per round** (simulation stays on the client). You can enter moves one-by-one, pass them all via `--batch-moves` (still sent as separate `/play` calls), or use **`--loops`** for many random games.
 
 ``` bash
 cd client
@@ -105,11 +109,43 @@ python client.py alice
 python client.py alice your-password
 ```
 
-You will be prompted to enter a move:
+You will be prompted for each move (`Move 1/N`, …); each prompt triggers a **`POST /play`**. After the last round, the match summary is printed.
 
-    rock
-    paper
-    scissors
+Provide all moves up front (each still sent as its own **`POST /play`**, in order):
+
+``` bash
+python client.py guest guest --batch-moves "rock paper scissors rock paper"
+```
+
+Optional **`--url`** (or env **`RPS_BASE_URL`**) for the server base URL.
+
+Run **many games** with **random** moves (no prompts), e.g. 100 matches:
+
+``` bash
+python client.py guest guest --loops 100
+```
+
+------------------------------------------------------------------------
+
+## Load simulator
+
+Run many complete matches in one go. Each match uses **`POST /sessions`** then a **client-side loop** of **`POST /play`** (one per round); the server does not accept batch play.
+
+``` bash
+cd simulator
+pip install -r ../requirements.txt   # if needed (uses `requests`)
+cp simulator_config.json.example simulator_config.json
+# Ensure server users exist (see users_config.json) — example includes usr1/pwd1, usr2/pwd2, usr3/pwd3, guest/guest
+python simulator.py --games 100
+```
+
+- **`--games N`** — number of matches (default `100`).
+- **`--config path`** — JSON with optional `base_url` and optional `users` array
+  `[{ "username": "...", "password": "..." }, ...]`.
+- If `users` is missing or empty, users are read from **`server/users_config.json`**
+  (username/password map) relative to the repo layout.
+- Each round’s “image” stub is chosen at random: **rock**, **paper**, **scissors**, or **none**
+  (empty string → classifier picks a random move).
 
 ------------------------------------------------------------------------
 

@@ -54,6 +54,7 @@ class CreateSessionRequest(BaseModel):
 class SessionResponse(BaseModel):
     session_id: str
     user_id: Optional[str] = None
+    max_rounds: int
 
 
 class RoundResult(BaseModel):
@@ -100,6 +101,12 @@ class GameStatsResponse(BaseModel):
     server_wins: int
     draws: int
     active_sessions: int
+
+
+class WinBreakdown24hResponse(BaseModel):
+    player_wins: int
+    server_wins: int
+    draws: int
 
 
 class ConfigResponse(BaseModel):
@@ -159,7 +166,7 @@ def create_session(
     now = time.time()
     session_id = str(uuid.uuid4())
     db.create_session(session_id, username, max_rounds, now, now)
-    return SessionResponse(session_id=session_id, user_id=username)
+    return SessionResponse(session_id=session_id, user_id=username, max_rounds=max_rounds)
 
 
 def _max_rounds_for(state: SessionState) -> int:
@@ -183,20 +190,18 @@ def get_session(session_id: str, _username: str = Depends(verify_game_user)):
     )
 
 
-@app.post("/play")
-def play(req: PlayRequest, _username: str = Depends(verify_game_user)):
-    """Play one round in the given session. Requires game user auth."""
-    state = _get_session(req.session_id)
+def _run_one_play_round(session_id: str, image: str) -> Optional[dict[str, Any]]:
+    """
+    Play one round for an active session. Returns response dict, or None if match already complete.
+    """
+    state = _get_session(session_id)
     now = time.time()
     max_rounds = _max_rounds_for(state)
 
     if state["round_number"] >= max_rounds:
-        raise HTTPException(
-            status_code=400,
-            detail="Match already complete. Create a new session to play again.",
-        )
+        return None
 
-    player_move = classify_image(req.image)
+    player_move = classify_image(image)
     server_move = random_move()
     round_winner = decide_winner(player_move, server_move)
 
@@ -228,7 +233,7 @@ def play(req: PlayRequest, _username: str = Depends(verify_game_user)):
         db.record_match_result(winner)
 
     db.update_session_after_play(
-        req.session_id,
+        session_id,
         round_number,
         player_score,
         server_score,
@@ -258,6 +263,18 @@ def play(req: PlayRequest, _username: str = Depends(verify_game_user)):
         "player_score": player_score,
         "server_score": server_score,
     }
+
+
+@app.post("/play")
+def play(req: PlayRequest, _username: str = Depends(verify_game_user)):
+    """Play one round in the given session. Requires game user auth."""
+    out = _run_one_play_round(req.session_id, req.image)
+    if out is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Match already complete. Create a new session to play again.",
+        )
+    return out
 
 
 # --- Admin: SPA (dashboard + settings) ---
@@ -305,6 +322,18 @@ def admin_list_sessions(include_expired: bool = False):
         )
     result.sort(key=lambda x: (x.last_activity_at or 0, x.created_at or 0), reverse=True)
     return result
+
+
+@admin_router.get("/monitor/win_breakdown_24h", response_model=WinBreakdown24hResponse)
+def admin_win_breakdown_24h():
+    """Completed matches by winner in the last 24 hours (by session last_activity_at)."""
+    since = time.time() - 86400
+    b = db.get_win_breakdown_since(since)
+    return WinBreakdown24hResponse(
+        player_wins=b["player_wins"],
+        server_wins=b["server_wins"],
+        draws=b["draws"],
+    )
 
 
 @admin_router.get("/monitor/game_stats", response_model=GameStatsResponse)
