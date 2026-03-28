@@ -344,55 +344,66 @@
     .tiles {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 0.85rem;
+      gap: 0;
       margin-bottom: 0;
+      border-radius: 12px;
+      overflow: hidden;
+      outline: 1px solid var(--border);
+      outline-offset: 0;
     }
 
     .tile {
-      aspect-ratio: 1;
-      max-height: 140px;
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
+      box-sizing: border-box;
+      width: 100%;
+      height: 74px;
+      min-height: 74px;
+      max-height: 74px;
+      border: none;
+      border-radius: 0;
       background: linear-gradient(145deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
       cursor: pointer;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 0.35rem;
+      gap: 0.15rem;
       touch-action: manipulation;
       user-select: none;
       -webkit-user-select: none;
-      transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s, border-color 0.2s;
+      transition: filter 0.12s, background 0.12s;
       font-family: inherit;
       color: var(--text);
       -webkit-tap-highlight-color: transparent;
     }
 
     .tile:hover:not(:disabled) {
-      transform: scale(1.03);
-      border-color: rgba(255, 255, 255, 0.25);
-      box-shadow: 0 12px 40px rgba(124, 92, 255, 0.15);
+      filter: brightness(1.12);
     }
 
-    .tile:active:not(:disabled) { transform: scale(0.97); }
-    .tile:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+    .tile:active:not(:disabled) {
+      filter: brightness(0.9);
+    }
+    .tile:disabled { opacity: 0.45; cursor: not-allowed; filter: none; }
 
-    .tile .emoji { font-size: 2.25rem; line-height: 1; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.3)); }
+    .tile .emoji { font-size: 1.65rem; line-height: 1; filter: drop-shadow(0 2px 6px rgba(0,0,0,0.35)); }
     .tile .label {
       font-family: "Syne", sans-serif;
       font-weight: 700;
-      font-size: 0.85rem;
-      letter-spacing: 0.06em;
+      font-size: 0.68rem;
+      letter-spacing: 0.04em;
     }
 
-    .tile-rock { border-color: rgba(94, 228, 163, 0.35); }
-    .tile-paper { border-color: rgba(124, 92, 255, 0.4); }
-    .tile-scissors { border-color: rgba(255, 138, 122, 0.4); }
-    .tile-none { border-color: rgba(196, 181, 253, 0.35); }
+    .tile-rock { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1), inset 0 2px 0 0 rgba(94, 228, 163, 0.55); }
+    .tile-paper { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1), inset 0 2px 0 0 rgba(124, 92, 255, 0.55); }
+    .tile-scissors { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1), inset 0 2px 0 0 rgba(255, 138, 122, 0.55); }
+    .tile-none { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1), inset 0 2px 0 0 rgba(196, 181, 253, 0.55); }
 
     .round-result {
-      min-height: 5.5rem;
+      min-height: 4.75rem;
+      max-height: 9rem;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
       padding: 1rem;
       border-radius: 14px;
       background: rgba(0, 0, 0, 0.2);
@@ -401,6 +412,8 @@
       font-size: 0.95rem;
       line-height: 1.5;
       transition: background 0.3s, border-color 0.3s;
+      scrollbar-width: thin;
+      overscroll-behavior: contain;
     }
 
     .round-result.player-win { border-color: rgba(94, 228, 163, 0.5); background: rgba(94, 228, 163, 0.08); }
@@ -453,7 +466,61 @@
     .round-result-block {
       display: flex;
       flex-direction: column;
-      gap: 0.65rem;
+      gap: 0.5rem;
+    }
+
+    /* Fixed-height play history: scroll inside, no page growth as rounds accrue */
+    .match-history-dock {
+      flex-shrink: 0;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: rgba(0, 0, 0, 0.16);
+      padding: 0.35rem 0.4rem 0.4rem;
+    }
+
+    .match-history-dock[hidden] {
+      display: none !important;
+    }
+
+    .match-history-dock .text-match-gallery,
+    .match-history-dock .vision-match-gallery {
+      padding: 0.15rem 0;
+      margin: 0;
+      border: none;
+      border-radius: 0;
+      background: transparent;
+    }
+
+    .match-history-dock .text-match-gallery:not([hidden]) + .vision-match-gallery:not([hidden]) {
+      border-top: 1px solid rgba(255, 255, 255, 0.07);
+      margin-top: 0.25rem;
+      padding-top: 0.3rem;
+    }
+
+    .match-history-dock .vision-gallery-title {
+      font-size: 0.55rem;
+      margin-bottom: 0.2rem;
+      text-align: left;
+      padding-left: 0.1rem;
+    }
+
+    .match-history-dock .vision-gallery-item img,
+    .match-history-dock .text-gallery-emoji {
+      width: 2.65rem;
+      height: 2.65rem;
+      font-size: 1.45rem;
+    }
+
+    .match-history-dock .vision-gallery-cap,
+    .match-history-dock .text-gallery-cap {
+      font-size: 0.52rem;
+      max-width: 3.5rem;
+    }
+
+    .match-history-dock .you-play-line,
+    .match-history-dock .house-play-line {
+      font-size: 0.52rem;
+      margin-top: 0.1rem;
     }
 
     .vision-match-gallery {
@@ -480,7 +547,7 @@
     .vision-gallery-strip {
       display: flex;
       flex-wrap: wrap;
-      gap: 0.55rem;
+      gap: 0.45rem;
       justify-content: center;
     }
 
@@ -738,30 +805,55 @@
 
       .tiles {
         grid-template-columns: 1fr 1fr;
-        gap: 0.6rem;
+        gap: 0;
+        border-radius: 11px;
       }
 
       .tile {
-        max-height: none;
-        min-height: 104px;
-        border-radius: 16px;
+        height: 68px;
+        min-height: 68px;
+        max-height: 68px;
       }
 
       .tile .emoji {
-        font-size: clamp(1.85rem, 11vw, 2.35rem);
+        font-size: 1.4rem;
       }
 
       .tile .label {
-        font-size: 0.8rem;
+        font-size: 0.62rem;
       }
 
       .round-result {
-        min-height: 0;
-        padding: 0.85rem 0.65rem;
-        font-size: 0.86rem;
+        min-height: 3.6rem;
+        max-height: 7.25rem;
+        padding: 0.75rem 0.55rem;
+        font-size: 0.84rem;
         line-height: 1.45;
         border-radius: 12px;
         word-break: break-word;
+      }
+
+      .match-history-dock {
+        padding: 0.28rem 0.32rem 0.32rem;
+      }
+
+      .match-history-dock .vision-gallery-item img,
+      .match-history-dock .text-gallery-emoji {
+        width: 2.35rem;
+        height: 2.35rem;
+        font-size: 1.25rem;
+      }
+
+      .match-history-dock .vision-gallery-cap,
+      .match-history-dock .text-gallery-cap {
+        font-size: 0.48rem;
+        max-width: 3.1rem;
+      }
+
+      .btn-ghost {
+        margin-top: 0.65rem;
+        min-height: 44px;
+        padding: 0.65rem 0.85rem;
       }
 
       .round-result .outcome {
@@ -792,7 +884,9 @@
       }
 
       .tile {
-        min-height: 96px;
+        height: 64px;
+        min-height: 64px;
+        max-height: 64px;
       }
     }
 
@@ -808,6 +902,7 @@
       .btn-primary:hover:not(:disabled),
       .tile:hover:not(:disabled) {
         transform: none;
+        filter: none;
       }
     }
 
@@ -956,8 +1051,10 @@
           <div class="round-result" id="round-result">
             <span class="muted-hint">Pick a move to begin.</span>
           </div>
-          <div id="text-match-gallery" class="text-match-gallery" hidden></div>
-          <div id="vision-match-gallery" class="vision-match-gallery" hidden></div>
+          <div id="match-history-dock" class="match-history-dock" hidden>
+            <div id="text-match-gallery" class="text-match-gallery" hidden></div>
+            <div id="vision-match-gallery" class="vision-match-gallery" hidden></div>
+          </div>
         </div>
 
         <button type="button" class="btn-ghost" id="btn-new-match">New match</button>
@@ -1190,6 +1287,14 @@
       return TEXT_MOVE_UI[m] || { emoji: '❔', label: String(move || '?'), tileClass: '' };
     }
 
+    function syncMatchHistoryDockVisibility() {
+      const dock = $('match-history-dock');
+      if (!dock) return;
+      const has = state.textGestureGallery.length > 0 || state.visionGallery.length > 0;
+      if (has) dock.removeAttribute('hidden');
+      else dock.setAttribute('hidden', '');
+    }
+
     function roundNumFromPlay(data) {
       const n = Number(data && data.round);
       return Number.isFinite(n) ? n : 0;
@@ -1235,6 +1340,7 @@
       if (!state.textGestureGallery.length) {
         host.replaceChildren();
         host.hidden = true;
+        syncMatchHistoryDockVisibility();
         return;
       }
       host.hidden = false;
@@ -1268,6 +1374,7 @@
         strip.appendChild(wrap);
       }
       host.replaceChildren(title, strip);
+      syncMatchHistoryDockVisibility();
     }
 
     function renderVisionMatchGallery() {
@@ -1276,6 +1383,7 @@
       if (!state.visionGallery.length) {
         host.replaceChildren();
         host.hidden = true;
+        syncMatchHistoryDockVisibility();
         return;
       }
       host.hidden = false;
@@ -1310,6 +1418,7 @@
         strip.appendChild(wrap);
       }
       host.replaceChildren(title, strip);
+      syncMatchHistoryDockVisibility();
     }
 
     function recordVisionClassification(canvas, label) {
