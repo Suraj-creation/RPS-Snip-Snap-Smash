@@ -112,6 +112,19 @@
       justify-self: end;
     }
 
+    .tagline-row--compact {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .tagline-row--compact .tagline-row-balance,
+    .tagline-row--compact .game-settings-more {
+      display: none !important;
+    }
+
+    .tagline-row--compact .tagline {
+      grid-column: 1;
+    }
+
     .panel {
       background: var(--surface);
       backdrop-filter: blur(20px);
@@ -889,6 +902,10 @@
         gap: 0.1rem 0.08rem;
       }
 
+      .tagline-row.tagline-row--compact {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
       .tagline-row-balance {
         width: 2.25rem;
         height: 2.25rem;
@@ -1267,10 +1284,10 @@
 <body>
   <div class="app">
     <h1>Rock · Paper · Scissors</h1>
-    <div class="tagline-row">
+    <div class="tagline-row tagline-row--compact" id="tagline-row">
       <span class="tagline-row-balance" aria-hidden="true"></span>
       <p class="tagline">Outsmart the house. Five rounds to glory.</p>
-      <button type="button" class="game-settings-more" id="btn-settings" aria-label="Settings" title="Settings">
+      <button type="button" class="game-settings-more" id="btn-settings" aria-label="Settings" title="Settings" hidden>
         <span class="game-settings-more-dots" aria-hidden="true"><span></span><span></span><span></span></span>
       </button>
     </div>
@@ -2189,6 +2206,10 @@
     function showGame() {
       $('view-login').classList.remove('active');
       $('view-game').classList.add('active');
+      const tr = $('tagline-row');
+      if (tr) tr.classList.remove('tagline-row--compact');
+      const bs = $('btn-settings');
+      if (bs) bs.removeAttribute('hidden');
     }
 
     function showLogin() {
@@ -2205,6 +2226,10 @@
       const st = $('user-stats');
       st.textContent = '';
       st.classList.remove('visible');
+      const tr = $('tagline-row');
+      if (tr) tr.classList.add('tagline-row--compact');
+      const bs = $('btn-settings');
+      if (bs) bs.setAttribute('hidden', '');
     }
 
     function renderUserStats(s) {
