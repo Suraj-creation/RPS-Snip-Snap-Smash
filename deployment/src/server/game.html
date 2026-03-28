@@ -175,12 +175,16 @@
     #view-game { display: none; }
     #view-game.active { display: block; animation: rise 0.5s ease forwards; }
 
+    #view-game .panel {
+      --game-stack-gap: 0.3rem;
+    }
+
     .score-bar {
       display: flex;
       justify-content: space-between;
       align-items: stretch;
       gap: 0.5rem;
-      margin-bottom: 0.5rem;
+      margin-bottom: var(--game-stack-gap);
       padding: 0.75rem 0.65rem;
       background: var(--surface2);
       border-radius: 14px;
@@ -237,7 +241,7 @@
       line-height: 1.35;
       color: var(--muted);
       text-align: center;
-      margin: 0 0 0.85rem;
+      margin: 0 0 var(--game-stack-gap);
       opacity: 0.92;
     }
 
@@ -246,7 +250,7 @@
       line-height: 1.45;
       color: var(--muted);
       text-align: center;
-      margin: 0 0 1rem;
+      margin: 0 0 var(--game-stack-gap);
       padding: 0.5rem 0.35rem;
       border-radius: 10px;
       background: rgba(0, 0, 0, 0.12);
@@ -262,7 +266,7 @@
     .user-stats .hl-d { color: var(--draw); font-weight: 600; }
 
     .game-input-section {
-      margin-bottom: 1.25rem;
+      margin-bottom: var(--game-stack-gap);
     }
 
     .input-mode-switcher {
@@ -418,18 +422,18 @@
 
     /* Stable arena layout after input mode is known (no vertical jump from new plays / panels) */
     #view-game .panel.game-layout-locked .round-result {
-      height: 7.5rem;
-      min-height: 7.5rem;
-      max-height: 7.5rem;
+      height: 8.6rem;
+      min-height: 8.6rem;
+      max-height: 8.6rem;
       flex-shrink: 0;
     }
 
     #view-game .panel.game-layout-locked .input-slot {
-      min-height: 12rem;
+      min-height: 11.65rem;
     }
 
     #view-game .panel.game-layout-locked.game-single-mode .input-slot {
-      min-height: 9rem;
+      min-height: 8.65rem;
     }
 
     #view-game .panel.game-layout-locked .match-history-dock {
@@ -507,7 +511,7 @@
     .round-result-block {
       display: flex;
       flex-direction: column;
-      gap: 0.5rem;
+      gap: var(--game-stack-gap);
     }
 
     /* Fixed-height play history: scroll inside, no page growth as rounds accrue */
@@ -715,6 +719,10 @@
 
     .btn-ghost:hover { color: var(--text); border-color: var(--muted); }
 
+    #view-game #btn-new-match {
+      margin-top: var(--game-stack-gap);
+    }
+
     #btn-new-match.needs-attention {
       border-color: rgba(124, 92, 255, 0.45);
       color: var(--text);
@@ -823,18 +831,12 @@
       .score-match-hint {
         font-size: 0.62rem;
         line-height: 1.4;
-        margin: 0 0 0.65rem;
       }
 
       .user-stats {
         font-size: 0.7rem;
         line-height: 1.4;
         padding: 0.45rem 0.3rem;
-        margin-bottom: 0.85rem;
-      }
-
-      .game-input-section {
-        margin-bottom: 0.95rem;
       }
 
       .input-mode-tab {
@@ -874,9 +876,9 @@
       }
 
       #view-game .panel.game-layout-locked .round-result {
-        height: 6.5rem;
-        min-height: 6.5rem;
-        max-height: 6.5rem;
+        height: 7.45rem;
+        min-height: 7.45rem;
+        max-height: 7.45rem;
       }
 
       #view-game .panel.game-layout-locked .match-history-dock {
@@ -886,11 +888,11 @@
       }
 
       #view-game .panel.game-layout-locked .input-slot {
-        min-height: 10.25rem;
+        min-height: 9.85rem;
       }
 
       #view-game .panel.game-layout-locked.game-single-mode .input-slot {
-        min-height: 7.75rem;
+        min-height: 7.45rem;
       }
 
       .match-history-dock {
