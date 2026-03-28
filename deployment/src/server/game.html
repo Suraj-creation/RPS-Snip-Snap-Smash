@@ -370,6 +370,70 @@
     .round-result.is-match-complete.tone-house-won-match { border-color: rgba(255, 138, 122, 0.4); }
     .round-result.is-match-complete.tone-draw-match { border-color: rgba(196, 181, 253, 0.4); }
 
+    .round-result-block {
+      display: flex;
+      flex-direction: column;
+      gap: 0.65rem;
+    }
+
+    .vision-match-gallery {
+      padding: 0.65rem 0.7rem;
+      border-radius: 14px;
+      background: rgba(0, 0, 0, 0.18);
+      border: 1px solid var(--border);
+    }
+
+    .vision-match-gallery[hidden] {
+      display: none !important;
+    }
+
+    .vision-gallery-title {
+      font-size: 0.62rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--muted);
+      margin-bottom: 0.45rem;
+      text-align: center;
+    }
+
+    .vision-gallery-strip {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.55rem;
+      justify-content: center;
+    }
+
+    .vision-gallery-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.3rem;
+      max-width: 5.5rem;
+    }
+
+    .vision-gallery-item img {
+      width: 4.5rem;
+      height: 4.5rem;
+      object-fit: cover;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: rgba(0, 0, 0, 0.35);
+    }
+
+    .vision-gallery-cap {
+      font-size: 0.68rem;
+      color: var(--muted);
+      text-align: center;
+      line-height: 1.25;
+      word-break: break-word;
+    }
+
+    .vision-gallery-cap strong {
+      color: var(--text);
+      font-weight: 600;
+    }
+
     .btn-ghost {
       margin-top: 1rem;
       width: 100%;
@@ -422,13 +486,26 @@
     }
 
     .alt-inputs-row {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
+      display: flex;
+      flex-wrap: wrap;
       gap: 0.55rem;
     }
 
-    .alt-inputs-row.single-col {
-      grid-template-columns: 1fr;
+    .alt-inputs-row .btn-alt {
+      flex: 1 1 calc(50% - 0.275rem);
+      min-width: 5.25rem;
+    }
+
+    .alt-inputs-row:not(.has-vision) .btn-audio {
+      flex: 1 1 100%;
+    }
+
+    .alt-inputs-row.has-both-modes .btn-audio {
+      flex: 1 1 100%;
+    }
+
+    .vision-group {
+      display: contents;
     }
 
     .btn-alt {
@@ -614,6 +691,73 @@
         transform: none;
       }
     }
+
+    .vision-webcam-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 200;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+
+    .vision-webcam-modal[hidden] {
+      display: none !important;
+    }
+
+    .vision-webcam-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(10, 6, 18, 0.72);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+    }
+
+    .vision-webcam-panel {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      max-width: 380px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.1rem 1.15rem 1.25rem;
+      box-shadow: var(--tile-shadow);
+    }
+
+    .vision-webcam-panel h3 {
+      font-family: "Syne", sans-serif;
+      font-size: 1rem;
+      font-weight: 700;
+      margin-bottom: 0.65rem;
+      text-align: center;
+    }
+
+    .vision-webcam-panel video {
+      display: block;
+      width: 100%;
+      max-height: min(50vh, 280px);
+      object-fit: cover;
+      border-radius: 12px;
+      background: #000;
+      transform: scaleX(-1);
+    }
+
+    .vision-webcam-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      margin-top: 0.85rem;
+    }
+
+    .vision-webcam-actions .btn-primary {
+      width: 100%;
+    }
+
+    .vision-webcam-actions .btn-ghost {
+      width: 100%;
+    }
   </style>
 </head>
 <body>
@@ -670,21 +814,39 @@
           </button>
         </div>
 
-        <div id="alt-inputs" class="alt-inputs" style="display: none;" aria-label="Photo and voice input">
+        <div id="alt-inputs" class="alt-inputs" style="display: none;" aria-label="Photo, webcam, and voice input">
           <p class="alt-inputs-label">Also play with</p>
           <div class="alt-inputs-row" id="alt-inputs-row">
-            <button type="button" class="btn-alt" id="btn-vision" style="display: none;" disabled aria-label="Use camera or photo">📷 Photo</button>
+            <div class="vision-group" id="vision-group" style="display: none;">
+              <button type="button" class="btn-alt" id="btn-vision-file" style="display: none;" disabled aria-label="Choose image file">📁 File</button>
+              <button type="button" class="btn-alt" id="btn-vision-live" style="display: none;" disabled aria-label="Use live webcam">📹 Live</button>
+            </div>
             <input type="file" id="vision-file-input" accept="image/*" capture="environment" class="sr-only" tabindex="-1" title="Choose image" />
-            <button type="button" class="btn-alt" id="btn-audio" style="display: none;" disabled aria-label="Speak your move">🎤 Speak</button>
+            <button type="button" class="btn-alt btn-audio" id="btn-audio" style="display: none;" disabled aria-label="Speak your move">🎤 Speak</button>
           </div>
           <p class="alt-inputs-hint" id="alt-inputs-hint"></p>
         </div>
 
-        <div class="round-result" id="round-result">
-          <span class="muted-hint">Pick a move to begin.</span>
+        <div class="round-result-block" id="round-result-block">
+          <div class="round-result" id="round-result">
+            <span class="muted-hint">Pick a move to begin.</span>
+          </div>
+          <div id="vision-match-gallery" class="vision-match-gallery" hidden></div>
         </div>
 
         <button type="button" class="btn-ghost" id="btn-new-match">New match</button>
+      </div>
+    </div>
+
+    <div id="vision-webcam-modal" class="vision-webcam-modal" hidden>
+      <div class="vision-webcam-backdrop" id="vision-webcam-backdrop"></div>
+      <div class="vision-webcam-panel" role="dialog" aria-modal="true" aria-labelledby="vision-webcam-title">
+        <h3 id="vision-webcam-title">Webcam</h3>
+        <video id="vision-webcam-video" playsinline autoplay muted></video>
+        <div class="vision-webcam-actions">
+          <button type="button" class="btn-primary" id="vision-webcam-capture">Capture</button>
+          <button type="button" class="btn-ghost" id="vision-webcam-cancel">Cancel</button>
+        </div>
       </div>
     </div>
   </div>
@@ -700,6 +862,8 @@
       busy: false,
       mlBundle: null,
       ml: { visionSession: null, visionVersion: null },
+      visionWebcamStream: null,
+      visionGallery: [],
     };
 
     function basicAuthHeader(user, pass) {
@@ -822,7 +986,7 @@
       return new ort.Tensor('float32', out, [1, 3, H, W]);
     }
 
-    async function runVisionOnFile(file) {
+    async function prepareVisionSession() {
       const bundle = state.mlBundle;
       const v = bundle && bundle.vision;
       if (!v || !v.available || !v.model_url) throw new Error('Vision model not available');
@@ -844,12 +1008,89 @@
         state.ml.visionSession = await ort.InferenceSession.create(buf, { executionProviders: ['wasm'] });
         state.ml.visionVersion = v.version;
       }
-      const bmp = await createImageBitmap(file);
+      return v;
+    }
+
+    function drawSourceToVisionCanvas(source, v) {
       const canvas = document.createElement('canvas');
       canvas.width = v.input.width;
       canvas.height = v.input.height;
       const ctx = canvas.getContext('2d');
-      ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+      ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+      return canvas;
+    }
+
+    function escapeHtmlVision(s) {
+      return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function canvasToVisionThumbDataUrl(sourceCanvas, maxSide) {
+      const cap = maxSide || 112;
+      const w = sourceCanvas.width;
+      const h = sourceCanvas.height;
+      const scale = Math.min(1, cap / Math.max(w, h));
+      const tw = Math.max(1, Math.round(w * scale));
+      const th = Math.max(1, Math.round(h * scale));
+      const c = document.createElement('canvas');
+      c.width = tw;
+      c.height = th;
+      c.getContext('2d').drawImage(sourceCanvas, 0, 0, tw, th);
+      return c.toDataURL('image/jpeg', 0.85);
+    }
+
+    function renderVisionMatchGallery() {
+      const host = $('vision-match-gallery');
+      if (!host) return;
+      if (!state.visionGallery.length) {
+        host.replaceChildren();
+        host.hidden = true;
+        return;
+      }
+      host.hidden = false;
+      const title = document.createElement('p');
+      title.className = 'vision-gallery-title';
+      title.textContent = 'Vision plays this match';
+      const strip = document.createElement('div');
+      strip.className = 'vision-gallery-strip';
+      for (let i = 0; i < state.visionGallery.length; i++) {
+        const item = state.visionGallery[i];
+        const wrap = document.createElement('div');
+        wrap.className = 'vision-gallery-item';
+        const img = document.createElement('img');
+        img.src = item.thumb;
+        img.alt = 'Round ' + item.round + ', model label ' + item.label;
+        const cap = document.createElement('span');
+        cap.className = 'vision-gallery-cap';
+        cap.innerHTML =
+          'Round <strong>' + item.round + '</strong><br>' + escapeHtmlVision(item.label);
+        wrap.appendChild(img);
+        wrap.appendChild(cap);
+        strip.appendChild(wrap);
+      }
+      host.replaceChildren(title, strip);
+    }
+
+    function recordVisionClassification(canvas, label) {
+      const rn = parseInt($('round-num').textContent, 10);
+      const round = Number.isFinite(rn) ? rn : 1;
+      state.visionGallery.push({
+        thumb: canvasToVisionThumbDataUrl(canvas, 112),
+        label: String(label),
+        round,
+      });
+      renderVisionMatchGallery();
+    }
+
+    function clearVisionMatchGallery() {
+      state.visionGallery = [];
+      renderVisionMatchGallery();
+    }
+
+    async function runVisionOnCanvas(canvas, v) {
       const tensor = buildNCHWTensorFromCanvas(canvas, v.input);
       const inName = v.input.name || 'input';
       const feeds = {};
@@ -862,7 +1103,91 @@
         if (logits[i] > logits[bi]) bi = i;
       }
       const label = (v.labels && v.labels[bi]) ? v.labels[bi] : 'none';
+      recordVisionClassification(canvas, label);
       onPlayMove(label === 'none' ? 'none' : label);
+    }
+
+    async function runVisionOnFile(file) {
+      const v = await prepareVisionSession();
+      const bmp = await createImageBitmap(file);
+      try {
+        const canvas = drawSourceToVisionCanvas(bmp, v);
+        await runVisionOnCanvas(canvas, v);
+      } finally {
+        if (bmp && typeof bmp.close === 'function') bmp.close();
+      }
+    }
+
+    function stopVisionWebcam() {
+      const video = $('vision-webcam-video');
+      const stream = state.visionWebcamStream;
+      state.visionWebcamStream = null;
+      if (video) video.srcObject = null;
+      if (stream && stream.getTracks) {
+        stream.getTracks().forEach((t) => {
+          try { t.stop(); } catch (_) {}
+        });
+      }
+    }
+
+    function visionWebcamOnEscape(e) {
+      if (e.key === 'Escape') closeVisionWebcamModal();
+    }
+
+    function closeVisionWebcamModal() {
+      stopVisionWebcam();
+      const modal = $('vision-webcam-modal');
+      if (modal) modal.hidden = true;
+      document.removeEventListener('keydown', visionWebcamOnEscape);
+    }
+
+    async function openVisionWebcamModal() {
+      if (state.busy || !state.sessionId) return;
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        $('round-result').className = 'round-result';
+        $('round-result').innerHTML = '<span style="color:var(--lose)">Camera not supported in this browser.</span>';
+        return;
+      }
+      const modal = $('vision-webcam-modal');
+      const video = $('vision-webcam-video');
+      if (!modal || !video) return;
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: false,
+        });
+        state.visionWebcamStream = stream;
+        video.srcObject = stream;
+        modal.hidden = false;
+        document.addEventListener('keydown', visionWebcamOnEscape);
+      } catch (err) {
+        $('round-result').className = 'round-result';
+        const msg =
+          err && err.name === 'NotAllowedError'
+            ? 'Camera permission denied.'
+            : (err && err.message) || 'Could not open camera';
+        $('round-result').innerHTML = '<span style="color:var(--lose)">' + msg + '</span>';
+      }
+    }
+
+    async function captureVisionWebcamFrame() {
+      const video = $('vision-webcam-video');
+      if (!video || !video.srcObject) return;
+      if (video.readyState < 2) {
+        $('round-result').className = 'round-result';
+        $('round-result').innerHTML = '<span style="color:var(--lose)">Camera not ready yet.</span>';
+        return;
+      }
+      try {
+        const v = await prepareVisionSession();
+        const canvas = drawSourceToVisionCanvas(video, v);
+        closeVisionWebcamModal();
+        await runVisionOnCanvas(canvas, v);
+      } catch (err) {
+        closeVisionWebcamModal();
+        $('round-result').className = 'round-result';
+        $('round-result').innerHTML = '<span style="color:var(--lose)">' + (err.message || 'Vision failed') + '</span>';
+      }
     }
 
     function transcriptToMove(text) {
@@ -905,7 +1230,9 @@
       const wrap = $('alt-inputs');
       const row = $('alt-inputs-row');
       const hint = $('alt-inputs-hint');
-      const btnV = $('btn-vision');
+      const visionGroup = $('vision-group');
+      const btnVF = $('btn-vision-file');
+      const btnVL = $('btn-vision-live');
       const btnA = $('btn-audio');
       if (!state.authHeader) {
         wrap.style.display = 'none';
@@ -922,19 +1249,26 @@
         if (!show) return;
 
         let vHint = '';
+        const gum = typeof navigator !== 'undefined' && navigator.mediaDevices && navigator.mediaDevices.getUserMedia;
         if (wantVision) {
-          btnV.style.display = 'flex';
+          visionGroup.style.display = 'contents';
+          btnVF.style.display = 'flex';
+          btnVL.style.display = 'flex';
           const v = b.vision;
           if (v && v.available) {
-            btnV.disabled = false;
-            btnV.title = 'Open camera or photo library';
+            btnVF.disabled = false;
+            btnVL.disabled = !gum;
+            btnVF.title = 'Choose an image file';
+            btnVL.title = gum ? 'Use live webcam (laptop or phone)' : 'Camera API not available in this browser';
           } else {
-            btnV.disabled = true;
-            btnV.title = 'Add ml_artifacts/vision/model.onnx on the server';
+            btnVF.disabled = true;
+            btnVL.disabled = true;
+            btnVF.title = 'Add ml_artifacts/vision/model.onnx on the server';
+            btnVL.title = btnVF.title;
             vHint = 'Vision: deploy ONNX on the server to enable photo mode.';
           }
         } else {
-          btnV.style.display = 'none';
+          visionGroup.style.display = 'none';
         }
 
         let aHint = '';
@@ -963,10 +1297,8 @@
         const parts = [vHint, aHint].filter(Boolean);
         hint.textContent = parts.join(' ');
 
-        let cols = 0;
-        if (wantVision) cols++;
-        if (wantAudio) cols++;
-        row.classList.toggle('single-col', cols === 1);
+        row.classList.toggle('has-vision', wantVision);
+        row.classList.toggle('has-both-modes', wantVision && wantAudio);
       } catch (_) {
         wrap.style.display = 'none';
         state.mlBundle = null;
@@ -994,6 +1326,8 @@
     }
 
     function showLogin() {
+      closeVisionWebcamModal();
+      clearVisionMatchGallery();
       $('view-game').classList.remove('active');
       $('view-login').classList.add('active');
       state.sessionId = null;
@@ -1113,6 +1447,7 @@
 
     async function startSession() {
       const data = await api('/sessions', { method: 'POST', body: '{}' });
+      clearVisionMatchGallery();
       state.sessionId = data.session_id;
       state.maxRounds = data.max_rounds || 5;
       $('round-max').textContent = state.maxRounds;
@@ -1190,9 +1525,20 @@
       }
     }
 
-    $('btn-vision').addEventListener('click', () => {
-      if ($('btn-vision').disabled) return;
+    $('btn-vision-file').addEventListener('click', () => {
+      if ($('btn-vision-file').disabled) return;
       $('vision-file-input').click();
+    });
+
+    $('btn-vision-live').addEventListener('click', () => {
+      if ($('btn-vision-live').disabled) return;
+      openVisionWebcamModal();
+    });
+
+    $('vision-webcam-cancel').addEventListener('click', () => closeVisionWebcamModal());
+    $('vision-webcam-backdrop').addEventListener('click', () => closeVisionWebcamModal());
+    $('vision-webcam-capture').addEventListener('click', () => {
+      captureVisionWebcamFrame();
     });
 
     $('vision-file-input').addEventListener('change', async (e) => {
