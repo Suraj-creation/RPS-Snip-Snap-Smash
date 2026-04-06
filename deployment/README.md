@@ -348,3 +348,10 @@ Possible extensions include:
 
 Demonstrate **FastAPI** session/play APIs together with a **browser client** that
 can run **exported ONNX** vision models locally and cache them for repeat visits.
+
+
+------------------------------------------------------------------------
+
+## TODO
+
+Change the color scheme to a lighertheme. Difficult to use it under low light.
