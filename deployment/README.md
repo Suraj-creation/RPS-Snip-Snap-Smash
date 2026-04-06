@@ -354,4 +354,5 @@ can run **exported ONNX** vision models locally and cache them for repeat visits
 
 ## TODO
 
-Change the color scheme to a lighertheme. Difficult to use it under low light.
+Change the color scheme to a ligher theme. Difficult to use it under low light.
+
