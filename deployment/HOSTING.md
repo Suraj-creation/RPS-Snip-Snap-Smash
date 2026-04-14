@@ -1,12 +1,106 @@
 # Hosting the RPS server (Linux + Nginx + systemd)
 
-Notes for running the FastAPI app behind Nginx on a Linux host, with TLS on port 443 and the app on `127.0.0.1:8000`.
+Notes for running the FastAPI app behind Nginx on a Linux host, with TLS on port 443 and the app reachable at `http://127.0.0.1:8000` from the same machine. The sections below follow a practical sequence: understand **Why Nginx?**, **Run the app (systemd)**, add **TLS certificates**, then **Nginx configuration**. You can skip **Why Nginx?** on first read if you only want commands; return to it when tuning production.
+
+| Step | Section | Purpose |
+|------|---------|--------|
+| 1 | [Why Nginx?](#why-nginx) | Reverse proxy + TLS in front of uvicorn. |
+| 2 | [Run the app (systemd)](#run-the-app-systemd) | Service unit, API on port **8000**. |
+| 3 | [TLS certificates](#tls-certificates) | **Self-signed** (LAN / quick test) or **nip.io + Let’s Encrypt** (public internet). |
+| 4 | [Nginx configuration](#nginx-configuration) | Proxy to the app, `server_name`, certificate paths. |
 
 ---
 
-## 1. Self-signed TLS certificate
+## Why Nginx?
 
-Creates a key and cert under `/etc/nginx/ssl/` for **testing or internal use**. Browsers will show a **warning** until you trust the cert or use a real hostname certificate (e.g. Let’s Encrypt).
+The FastAPI app (**uvicorn**) can serve HTTP on its own. In this setup we still put **Nginx in front** because it is the usual place to handle **public-facing HTTP and HTTPS** and to **reverse-proxy** to the app.
+
+| Role | Why it helps |
+|------|----------------|
+| **TLS (HTTPS)** | Terminate SSL/TLS on **443** with certificates (self-signed, Let’s Encrypt, etc.). The Python process keeps speaking plain **HTTP** on `127.0.0.1:8000`, which keeps app config simple and matches how **Certbot** is typically used with Nginx. |
+| **Reverse proxy** | Browsers talk to **Nginx** on ports **80**/**443**; Nginx forwards requests to **uvicorn**. You can set **`Host`**, **`X-Forwarded-Proto`**, and **`Upgrade`** headers so the app sees the correct scheme and can support WebSockets if needed later. |
+| **Exposure** | You can configure uvicorn to listen only on **`127.0.0.1:8000`** so nothing on the internet connects to it **directly**—only Nginx on the same machine does. That reduces accidental exposure of the app port. |
+| **Operations** | One place for redirects (HTTP→HTTPS), logging, and future extras (rate limits, caching, another app on another path). |
+
+**Not required for every environment:** for local development you often hit `uvicorn` on `http://127.0.0.1:8000` with no Nginx. For a **public server** with HTTPS and a stable layout, Nginx (or another reverse proxy / load balancer) is the standard pattern.
+
+---
+
+## Run the app (systemd)
+
+### Why use systemd (instead of running `uvicorn` by hand)?
+
+A **one-off** `uvicorn` in an SSH session stops when you disconnect, when the terminal closes, or when the process crashes. For anything beyond a quick test, you want a **supervisor** so the API is always there for Nginx to proxy to.
+
+**systemd** gives you:
+
+| Benefit | What it means here |
+|--------|---------------------|
+| **Starts on boot** | After a server reboot, the game comes back without logging in to run commands. `enable` wires the unit into `multi-user.target`. |
+| **Restarts on failure** | `Restart=always` brings **uvicorn** back up if it exits unexpectedly (OOM, bug, killed). |
+| **Defined environment** | `WorkingDirectory`, `User`, and `Environment` set a stable cwd and PATH so imports and `server_config.json` resolve the same way every time—not whatever directory your shell was in. |
+| **No login session** | The app runs as a system service, not tied to your user’s graphical or SSH session. |
+| **Operations** | Standard commands: `systemctl start/stop/restart/status`, logs via `journalctl -u rps`. |
+
+Alternatives (Docker, `supervisord`, `pm2`, etc.) are fine; systemd is the usual default on modern Linux distros.
+
+### Unit file
+
+Adjust **`User`**, **`WorkingDirectory`**, and **`ExecStart`** paths to match your machine (unprivileged user, Python venv, and repo path). **`User`** should not be `root` unless you have a strong reason.
+
+- **`After=network.target`** — start only once networking is up so `0.0.0.0:8000` binds sensibly.
+- **`WorkingDirectory`** — must be the folder that contains `main.py` (FastAPI app module).
+- **`ExecStart`** — full path to the **uvicorn** binary in your venv; `--host 0.0.0.0` listens on all interfaces so Nginx on the same host can reach `127.0.0.1:8000`.
+- **`Restart=always` / `RestartSec=3`** — backoff slightly between restart attempts.
+- **`PYTHONUNBUFFERED=1`** — log lines flush promptly to the journal.
+
+Example file: `/etc/systemd/system/rps.service`
+
+The placeholder **`user`** means the **Linux account** that should run uvicorn (not the word “user” in general). Replace it everywhere with your real login name: **`User=`** must match **`/home/<name>/...`**. For example, if your username is `alice`, use `User=alice`, `WorkingDirectory=/home/alice/...`, and paths under `/home/alice/` to your venv’s `uvicorn` and `PATH`. On the server you can check the name with `whoami` and home with `echo $HOME`.
+
+```ini
+[Unit]
+Description=RPS
+After=network.target
+
+[Service]
+User=user
+WorkingDirectory=/home/user/rps/vu-rsp-dc-main/deployment/src/server
+
+ExecStart=/home/user/pyenv/bin/uvicorn main:app \
+    --host 0.0.0.0 \
+    --port 8000
+
+Restart=always
+RestartSec=3
+
+Environment="PATH=/home/user/pyenv/bin/"
+Environment="PYTHONUNBUFFERED=1"
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl start rps
+sudo systemctl enable rps
+sudo systemctl status rps
+```
+
+**Smoke test:** `curl -sS http://127.0.0.1:8000/docs` (or `/game`) should respond before you rely on Nginx.
+
+---
+
+## TLS certificates
+
+HTTPS is terminated at **Nginx**. Pick **one** path below (self-signed for quick setups, or Let’s Encrypt for trusted browsers on the public internet).
+
+### Self-signed certificate (testing or LAN)
+
+Creates a key and cert under `/etc/nginx/ssl/` for **testing or internal use**. Browsers will show a **warning** until you trust the cert or use a CA-issued hostname (Let’s Encrypt, etc.).
 
 ```bash
 sudo mkdir -p /etc/nginx/ssl
@@ -16,15 +110,15 @@ sudo openssl req -x509 -nodes -days 365 \
   -out /etc/nginx/ssl/selfsigned.crt
 ```
 
+Use these paths in the Nginx **Option A** example under [Nginx configuration](#nginx-configuration).
+
 For production on the public internet, prefer **Let’s Encrypt** (or your host’s managed TLS) instead of a long-lived self-signed cert.
 
----
-
-## 2. nip.io and CA-issued certificates (Let’s Encrypt)
+### nip.io and CA-issued certificates (Let’s Encrypt)
 
 If you do not own a domain but you have a **public static IP**, you can still get a **browser-trusted** certificate by using a free hostname that resolves to that IP.
 
-### nip.io
+#### nip.io
 
 [**nip.io**](https://nip.io) is a public DNS service that answers queries for names of the form:
 
@@ -41,7 +135,7 @@ Requirements for this to be useful with a real CA:
 
 Private addresses (e.g. `192.168.x.x`) can still use `*.nip.io` names for local testing, but **Let’s Encrypt HTTP-01** validation from the public internet will not succeed for a host that is not reachable on those ports from outside.
 
-### Issue a certificate with Certbot (nginx plugin)
+#### Issue a certificate with Certbot (nginx plugin)
 
 Install Certbot and the Nginx plugin using your distro’s packages, then request a cert for your nip.io name (replace the IP with yours):
 
@@ -59,26 +153,26 @@ sudo certbot certonly --nginx -d 203.0.113.7.nip.io
 
 Then point `ssl_certificate` and `ssl_certificate_key` at the paths Certbot prints (typically under `/etc/letsencrypt/live/<name>/`).
 
-### Nginx before Certbot
+#### Nginx before Certbot
 
 You still need a working HTTP server on port **80** so Let’s Encrypt can complete **HTTP-01** validation. A minimal `server { listen 80; server_name 203.0.113.7.nip.io; ... }` proxying to the app (or a simple `root`/`return`) is enough; Certbot can then add the HTTPS block or the `ssl` directives.
 
-### Renewals
+#### Renewals
 
 Let’s Encrypt certificates are short-lived; Certbot normally installs a **systemd timer** or **cron** job to renew. Keep Nginx and the app running so renewals succeed.
 
 ---
 
-## 3. Nginx configuration
+## Nginx configuration
 
 Place the site config where your distribution expects it (example: `/etc/nginx/conf.d/rps.conf`).
 
-**Yes — if you use a proper domain or a nip.io name, you should update Nginx** so it matches how clients and TLS expect to reach you:
+**If you use a proper domain or a nip.io name, you must align Nginx** with how clients and TLS reach you:
 
 | What | Why it matters |
 |------|----------------|
 | **`server_name`** | Must be the **exact hostname** users type in the browser (e.g. `game.example.com` or `203.0.113.7.nip.io`). Using `_` is only a loose catch-all; for HTTPS, the name should match the certificate and what DNS points to. |
-| **`ssl_certificate` / `ssl_certificate_key`** | **Self-signed** (section 1): paths under `/etc/nginx/ssl/` (or wherever you put them). **Let’s Encrypt** (section 2): typically `/etc/letsencrypt/live/<your-hostname>/fullchain.pem` and `privkey.pem` — Certbot usually writes these when you run `certbot --nginx`. |
+| **`ssl_certificate` / `ssl_certificate_key`** | **Self-signed:** paths under `/etc/nginx/ssl/` (see **Self-signed certificate** under TLS). **Let’s Encrypt:** typically `/etc/letsencrypt/live/<your-hostname>/fullchain.pem` and `privkey.pem` — Certbot usually writes these when you run `certbot --nginx`. |
 | **DNS** | For a real domain, an **A record** (or AAAA) must point that hostname to your server’s public IP **before** HTTP-01 validation and before users can resolve the name. |
 
 Shared proxy settings (reuse in both HTTP and HTTPS `location /`):
@@ -178,76 +272,14 @@ sudo nginx -t && sudo systemctl reload nginx
 
 ---
 
-## 4. systemd service unit
-
-### Why use systemd (instead of running `uvicorn` by hand)?
-
-A **one-off** `uvicorn` in an SSH session stops when you disconnect, when the terminal closes, or when the process crashes. For anything beyond a quick test, you want a **supervisor** so the API is always there for Nginx to proxy to.
-
-**systemd** gives you:
-
-| Benefit | What it means here |
-|--------|---------------------|
-| **Starts on boot** | After a server reboot, the game comes back without logging in to run commands. `enable` wires the unit into `multi-user.target`. |
-| **Restarts on failure** | `Restart=always` brings **uvicorn** back up if it exits unexpectedly (OOM, bug, killed). |
-| **Defined environment** | `WorkingDirectory`, `User`, and `Environment` set a stable cwd and PATH so imports and `server_config.json` resolve the same way every time—not whatever directory your shell was in. |
-| **No login session** | The app runs as a system service, not tied to your user’s graphical or SSH session. |
-| **Operations** | Standard commands: `systemctl start/stop/restart/status`, logs via `journalctl -u rps`. |
-
-Alternatives (Docker, `supervisord`, `pm2`, etc.) are fine; systemd is the usual default on modern Linux distros.
-
-### Unit file
-
-Adjust **`User`**, **`WorkingDirectory`**, and **`ExecStart`** paths to match your machine (unprivileged user, Python venv, and repo path). **`User`** should not be `root` unless you have a strong reason.
-
-- **`After=network.target`** — start only once networking is up so `0.0.0.0:8000` binds sensibly.
-- **`WorkingDirectory`** — must be the folder that contains `main.py` (FastAPI app module).
-- **`ExecStart`** — full path to the **uvicorn** binary in your venv; `--host 0.0.0.0` listens on all interfaces so Nginx on the same host can reach `127.0.0.1:8000`.
-- **`Restart=always` / `RestartSec=3`** — backoff slightly between restart attempts.
-- **`PYTHONUNBUFFERED=1`** — log lines flush promptly to the journal.
-
-Example file: `/etc/systemd/system/rps.service`
-
-```ini
-[Unit]
-Description=RPS
-After=network.target
-
-[Service]
-User=venkatababjisama
-WorkingDirectory=/home/venkatababjisama/rps/vu-rsp-dc-main/deployment/src/server
-
-ExecStart=/home/venkatababjisama/pyenv/bin/uvicorn main:app \
-    --host 0.0.0.0 \
-    --port 8000
-
-Restart=always
-RestartSec=3
-
-Environment="PATH=/home/venkatababjisama/pyenv/bin/"
-Environment="PYTHONUNBUFFERED=1"
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Enable and start:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl start rps
-sudo systemctl enable rps
-sudo systemctl status rps
-```
-
----
-
 ## Quick checklist
 
 | Item | Detail |
 |------|--------|
+| Order | **systemd** → **TLS** → **Nginx**, matching the sections in this doc. |
+| Why Nginx | TLS termination, reverse proxy, and optional loopback-only app bind; see [Why Nginx?](#why-nginx) |
 | App bind | `uvicorn` listens on `0.0.0.0:8000`; Nginx proxies to `127.0.0.1:8000`. |
 | `server_config.json` | If you use a file DB path, keep it alongside the app or use an absolute path the service user can write. |
-| HTTPS and camera | The browser **game** client needs a **trusted** or **accepted** HTTPS context for live camera features; self-signed certs require trusting the cert in the browser or using proper CA-issued certs. |
-| nip.io + Let’s Encrypt | Use `<static-ip>.nip.io` as a hostname, then `certbot --nginx -d <that-hostname>` for CA-issued TLS; needs a **public** IP and open **80**/**443**. See section 2. |
-| Nginx + real hostname | Set **`server_name`** to that hostname on **80** and **443**; use **Let’s Encrypt** `fullchain.pem` / `privkey.pem` paths on 443 (or self-signed paths only if you chose self-signed). See section 3, option B. |
+| HTTPS and camera | The browser **game** client needs a **trusted** or **accepted** HTTPS context for live camera features; self-signed certs require trusting the cert in the browser or using CA-issued certs. |
+| nip.io + Let’s Encrypt | Use `<static-ip>.nip.io`, then `certbot --nginx -d <that-hostname>`; needs a **public** IP and open **80**/**443**. See **nip.io and CA-issued certificates** under TLS. |
+| Nginx + real hostname | Set **`server_name`** on **80** and **443**; use Let’s Encrypt `fullchain.pem` / `privkey.pem` on 443 when using Certbot (Nginx **Option B**). |
