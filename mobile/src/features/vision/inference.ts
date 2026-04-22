@@ -43,7 +43,7 @@ let onnxRuntime: OnnxNamespace | null | undefined;
 let onnxRuntimePromise: Promise<OnnxNamespace | null> | null = null;
 let cachedOnnxSession: { cacheKey: string; session: OnnxSession } | null = null;
 
-async function getOnnxRuntime(manifest?: Manifest): Promise<OnnxNamespace | null> {
+async function getOnnxRuntime(): Promise<OnnxNamespace | null> {
   if (onnxRuntime !== undefined) {
     return onnxRuntime;
   }
@@ -56,18 +56,6 @@ async function getOnnxRuntime(manifest?: Manifest): Promise<OnnxNamespace | null
     try {
       const nativeRuntime = await import('onnxruntime-react-native');
       onnxRuntime = nativeRuntime as unknown as OnnxNamespace;
-      return onnxRuntime;
-    } catch {
-      onnxRuntime = null;
-    }
-
-    try {
-      const webRuntime = await import('onnxruntime-web');
-      onnxRuntime = webRuntime as unknown as OnnxNamespace;
-      const wasmBase = manifest?.onnx_runtime_web?.wasm_base;
-      if (wasmBase && onnxRuntime?.env?.wasm) {
-        onnxRuntime.env.wasm.wasmPaths = wasmBase;
-      }
       return onnxRuntime;
     } catch {
       onnxRuntime = null;
@@ -218,7 +206,7 @@ async function getOrCreateOnnxSession(
     };
   }
 
-  const ort = await getOnnxRuntime(manifest);
+  const ort = await getOnnxRuntime();
   if (!ort) {
     throw new Error('ONNX runtime is unavailable');
   }
@@ -278,7 +266,7 @@ async function runOnnxVisionInference(
   const { mean, std } = resolveMeanStd(manifest);
   const { data, dims } = buildInputTensor(decoded.data, decoded.width, decoded.height, layout, mean, std);
 
-  const ort = await getOnnxRuntime(manifest);
+  const ort = await getOnnxRuntime();
   if (!ort) {
     throw new Error('ONNX runtime is unavailable');
   }
