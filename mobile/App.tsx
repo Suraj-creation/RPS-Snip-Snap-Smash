@@ -48,7 +48,12 @@ import {
 import { useGameStore } from './src/store/useGameStore';
 import { theme } from './src/theme/tokens';
 import { toBasicAuthHeader } from './src/lib/http';
-import { API_BASE_URL } from './src/config/env';
+import {
+  clearApiBaseUrlOverride,
+  DEFAULT_API_BASE_URL,
+  getApiBaseUrl,
+  setApiBaseUrlOverride,
+} from './src/config/env';
 import { NeonButton } from './src/ui/NeonButton';
 import { NeonCard } from './src/ui/NeonCard';
 import { transcriptToMove, type GameMove } from './src/features/audio/transcript';
@@ -69,10 +74,13 @@ import { deriveInputModeSupport } from './src/features/game/inputModes';
 import { latestRoundFromSession, sessionStateToRounds } from './src/features/game/session';
 import {
   clearAuthSession,
+  clearSavedApiBaseUrl,
   clearSavedSession,
+  loadApiBaseUrl,
   loadAuthSession,
   loadInputMode,
   loadSession,
+  saveApiBaseUrl,
   saveAuthSession,
   saveInputMode,
   saveSession,
@@ -114,6 +122,9 @@ function AppScreen() {
   const [overlayScreen, setOverlayScreen] = useState<AppErrorScreen | null>(null);
   const [bootstrapping, setBootstrapping] = useState(true);
   const [form, setForm] = useState<LoginForm>({ username: '', password: '' });
+  const [apiBaseUrl, setApiBaseUrl] = useState(() => getApiBaseUrl());
+  const [apiBaseUrlDraft, setApiBaseUrlDraft] = useState(() => getApiBaseUrl());
+  const [apiBaseUrlError, setApiBaseUrlError] = useState<string | null>(null);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [visionError, setVisionError] = useState<string | null>(null);
   const [audioError, setAudioError] = useState<string | null>(null);
@@ -289,7 +300,8 @@ function AppScreen() {
 
     void (async () => {
       try {
-        const [savedMode, savedAuth, savedSession] = await Promise.all([
+        const [savedApiBaseUrl, savedMode, savedAuth, savedSession] = await Promise.all([
+          loadApiBaseUrl(),
           loadInputMode(),
           loadAuthSession(),
           loadSession(),
@@ -298,6 +310,19 @@ function AppScreen() {
         if (!active) {
           return;
         }
+
+        let restoredApiBaseUrl = getApiBaseUrl();
+        if (savedApiBaseUrl) {
+          try {
+            restoredApiBaseUrl = setApiBaseUrlOverride(savedApiBaseUrl);
+          } catch {
+            await clearSavedApiBaseUrl();
+            restoredApiBaseUrl = getApiBaseUrl();
+          }
+        }
+        setApiBaseUrl(restoredApiBaseUrl);
+        setApiBaseUrlDraft(restoredApiBaseUrl);
+        setApiBaseUrlError(null);
 
         if (savedMode) {
           setSelectedMode(savedMode);
@@ -595,13 +620,60 @@ function AppScreen() {
     setActiveTab('arena');
   };
 
+  const clearNetworkBoundState = async () => {
+    clearAuth();
+    clearSession();
+    setLastRound(null);
+    setRoundHistory([]);
+    setVisionPrediction(null);
+    setVisionPreviewUri(null);
+    setTranscript('');
+    setOverlayScreen(null);
+    queryClientHook.clear();
+    await Promise.all([clearAuthSession(), clearSavedSession()]);
+  };
+
+  const commitApiBaseUrlDraft = async (): Promise<string | null> => {
+    try {
+      const normalized = setApiBaseUrlOverride(apiBaseUrlDraft);
+      const changed = normalized !== apiBaseUrl;
+      setApiBaseUrl(normalized);
+      setApiBaseUrlDraft(normalized);
+      setApiBaseUrlError(null);
+      await saveApiBaseUrl(normalized);
+      if (changed) {
+        await clearNetworkBoundState();
+      }
+      return normalized;
+    } catch (error) {
+      setApiBaseUrlError(error instanceof Error ? error.message : 'Invalid API origin');
+      return null;
+    }
+  };
+
+  const handleResetApiBaseUrl = async () => {
+    clearApiBaseUrlOverride();
+    const fallback = getApiBaseUrl();
+    setApiBaseUrl(fallback);
+    setApiBaseUrlDraft(fallback);
+    setApiBaseUrlError(null);
+    await clearSavedApiBaseUrl();
+    await clearNetworkBoundState();
+  };
+
   const handleLogin = () => {
     if (!form.username.trim() || !form.password) {
       setLoginError('Username and password are required');
       return;
     }
 
-    loginMutation.mutate({ username: form.username.trim(), password: form.password });
+    void (async () => {
+      const normalized = await commitApiBaseUrlDraft();
+      if (!normalized) {
+        return;
+      }
+      loginMutation.mutate({ username: form.username.trim(), password: form.password });
+    })();
   };
 
   const handleLogout = () => {
@@ -858,9 +930,26 @@ function AppScreen() {
             </Text>
 
             <NeonCard style={styles.loginCard} tone="accent">
+              <Text style={styles.fieldLabel}>API Origin</Text>
+              <TextInput
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="url"
+                value={apiBaseUrlDraft}
+                onChangeText={(value) => {
+                  setApiBaseUrlDraft(value);
+                  setApiBaseUrlError(null);
+                }}
+                style={styles.input}
+                placeholder="https://your-backend.example.com"
+                placeholderTextColor={theme.colors.onSurfaceMuted}
+              />
+              {apiBaseUrlError ? <Text style={styles.errorInlineText}>{apiBaseUrlError}</Text> : null}
+
               <Text style={styles.fieldLabel}>Access ID</Text>
               <TextInput
                 autoCapitalize="none"
+                autoCorrect={false}
                 value={form.username}
                 onChangeText={(value) => setForm((current) => ({ ...current, username: value }))}
                 style={styles.input}
@@ -1365,6 +1454,40 @@ function AppScreen() {
 
             <NeonCard style={styles.hudCard}>
               <Text style={styles.cardTitle}>Preferences</Text>
+              <View style={styles.endpointBlock}>
+                <Text style={styles.fieldLabel}>API Origin</Text>
+                <TextInput
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="url"
+                  value={apiBaseUrlDraft}
+                  onChangeText={(value) => {
+                    setApiBaseUrlDraft(value);
+                    setApiBaseUrlError(null);
+                  }}
+                  style={styles.input}
+                  placeholder="https://your-backend.example.com"
+                  placeholderTextColor={theme.colors.onSurfaceMuted}
+                />
+                {apiBaseUrlError ? <Text style={styles.errorInlineText}>{apiBaseUrlError}</Text> : null}
+                <View style={styles.endpointActions}>
+                  <NeonButton
+                    label="Save origin"
+                    icon="content-save-outline"
+                    variant="secondary"
+                    onPress={() => void commitApiBaseUrlDraft()}
+                    style={styles.endpointAction}
+                  />
+                  <NeonButton
+                    label="Use default"
+                    icon="restore"
+                    variant="quiet"
+                    onPress={() => void handleResetApiBaseUrl()}
+                    disabled={apiBaseUrl === DEFAULT_API_BASE_URL && apiBaseUrlDraft === DEFAULT_API_BASE_URL}
+                    style={styles.endpointAction}
+                  />
+                </View>
+              </View>
               <View style={styles.settingRow}>
                 <View>
                   <Text style={styles.settingTitle}>Haptic feedback</Text>
@@ -1384,7 +1507,7 @@ function AppScreen() {
               <View style={styles.detailRow}>
                 <Text style={styles.bodyText}>API origin</Text>
                 <Text style={[styles.bodyTextStrong, styles.detailValue]} numberOfLines={1}>
-                  {API_BASE_URL}
+                  {apiBaseUrl}
                 </Text>
               </View>
             </NeonCard>
@@ -2084,6 +2207,16 @@ const styles = StyleSheet.create({
   detailValue: {
     flex: 1,
     textAlign: 'right',
+  },
+  endpointBlock: {
+    gap: theme.spacing.sm,
+  },
+  endpointActions: {
+    flexDirection: 'row',
+    gap: theme.spacing.sm,
+  },
+  endpointAction: {
+    flex: 1,
   },
   settingRow: {
     flexDirection: 'row',
