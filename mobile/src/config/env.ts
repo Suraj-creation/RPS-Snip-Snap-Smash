@@ -24,9 +24,51 @@ const defaultBaseUrl = Platform.select({
   default: 'http://localhost:8000',
 });
 
-export const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? defaultBaseUrl ?? 'http://localhost:8000';
+export function normalizeApiBaseUrl(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw new Error('API origin is required');
+  }
 
-export const API_FALLBACK_BASE_URLS =
-  Platform.OS === 'web'
-    ? Array.from(new Set([API_BASE_URL, 'http://127.0.0.1:8000', 'http://localhost:8000']))
-    : [API_BASE_URL];
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    throw new Error('API origin must include http:// or https://');
+  }
+
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new Error('API origin must use http:// or https://');
+  }
+
+  const path = url.pathname.replace(/\/+$/, '');
+  return `${url.origin}${path === '/' ? '' : path}`;
+}
+
+export const DEFAULT_API_BASE_URL = normalizeApiBaseUrl(
+  process.env.EXPO_PUBLIC_API_BASE_URL ?? defaultBaseUrl ?? 'http://localhost:8000',
+);
+
+let apiBaseUrlOverride: string | null = null;
+
+export function getApiBaseUrl(): string {
+  return apiBaseUrlOverride ?? DEFAULT_API_BASE_URL;
+}
+
+export function setApiBaseUrlOverride(value: string): string {
+  apiBaseUrlOverride = normalizeApiBaseUrl(value);
+  return apiBaseUrlOverride;
+}
+
+export function clearApiBaseUrlOverride(): void {
+  apiBaseUrlOverride = null;
+}
+
+export const API_BASE_URL = DEFAULT_API_BASE_URL;
+
+export function getApiFallbackBaseUrls(): string[] {
+  const baseUrl = getApiBaseUrl();
+  return Platform.OS === 'web'
+    ? Array.from(new Set([baseUrl, 'http://127.0.0.1:8000', 'http://localhost:8000']))
+    : [baseUrl];
+}

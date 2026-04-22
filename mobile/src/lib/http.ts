@@ -1,4 +1,4 @@
-import { API_BASE_URL, API_FALLBACK_BASE_URLS } from '../config/env';
+import { getApiBaseUrl, getApiFallbackBaseUrls } from '../config/env';
 import { Buffer } from 'buffer';
 
 type RequestOptions = {
@@ -21,7 +21,7 @@ export class HttpError extends Error {
   }
 }
 
-function buildUrl(path: string, absoluteUrl = false, baseUrl = API_BASE_URL): string {
+function buildUrl(path: string, absoluteUrl = false, baseUrl = getApiBaseUrl()): string {
   if (absoluteUrl || /^https?:\/\//i.test(path)) {
     return path;
   }
@@ -34,7 +34,7 @@ function buildCandidateUrls(path: string, absoluteUrl = false): string[] {
     return [buildUrl(path, absoluteUrl)];
   }
 
-  return API_FALLBACK_BASE_URLS.map((baseUrl) => buildUrl(path, false, baseUrl));
+  return getApiFallbackBaseUrls().map((baseUrl) => buildUrl(path, false, baseUrl));
 }
 
 async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = 15000): Promise<Response> {
@@ -50,6 +50,7 @@ async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = 1500
 
 function requestHeaders(authHeader?: string): Record<string, string> {
   return {
+    Accept: 'application/json',
     ...(authHeader ? { Authorization: authHeader } : {}),
   };
 }

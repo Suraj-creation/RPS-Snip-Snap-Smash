@@ -60,7 +60,10 @@ def _load_server_config() -> dict[str, Any]:
         return {"db_path": ":memory:"}
     try:
         data = json.loads(_SERVER_CONFIG_PATH.read_text(encoding="utf-8"))
-        return {"db_path": data.get("db_path") or ":memory:"}
+        return {
+            "db_path": data.get("db_path") or ":memory:",
+            "input_modes": data.get("input_modes"),
+        }
     except (json.JSONDecodeError, OSError):
         return {"db_path": ":memory:"}
 
@@ -69,6 +72,9 @@ def _load_server_config() -> dict[str, Any]:
 def startup():
     config = _load_server_config()
     db.init_db(path=config.get("db_path"))
+    configured_modes = config.get("input_modes")
+    if isinstance(configured_modes, list) and configured_modes:
+        db.set_config(input_modes=_normalize_input_modes([str(mode) for mode in configured_modes]))
 
 
 class PlayRequest(BaseModel):

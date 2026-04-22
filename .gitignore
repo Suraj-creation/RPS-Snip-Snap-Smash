@@ -1,6 +1,8 @@
 # dependencies
 node_modules/
 mobile/node_modules/
+.venv/
+deployment/.venv/
 
 # Expo / generated web output
 .expo/
@@ -15,6 +17,7 @@ __pycache__/
 *.tsbuildinfo
 
 # logs
+*.log
 npm-debug.*
 yarn-debug.*
 yarn-error.*

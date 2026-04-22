@@ -6,6 +6,7 @@ const USERNAME_KEY = 'rps.username';
 const SESSION_ID_KEY = 'rps.sessionId';
 const SESSION_MAX_ROUNDS_KEY = 'rps.sessionMaxRounds';
 const INPUT_MODE_KEY = 'rps.inputMode';
+const API_BASE_URL_KEY = 'rps.apiBaseUrl';
 
 type SecureStoreModule = {
   getItemAsync: (key: string) => Promise<string | null>;
@@ -119,4 +120,16 @@ export async function loadInputMode(): Promise<InputMode | null> {
   }
 
   return null;
+}
+
+export async function saveApiBaseUrl(baseUrl: string): Promise<void> {
+  await setItem(API_BASE_URL_KEY, baseUrl);
+}
+
+export async function loadApiBaseUrl(): Promise<string | null> {
+  return getItem(API_BASE_URL_KEY);
+}
+
+export async function clearSavedApiBaseUrl(): Promise<void> {
+  await deleteItem(API_BASE_URL_KEY);
 }

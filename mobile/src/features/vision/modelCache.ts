@@ -1,6 +1,6 @@
 import { Buffer } from 'buffer';
 import * as FileSystem from 'expo-file-system/legacy';
-import { API_BASE_URL } from '../../config/env';
+import { getApiBaseUrl } from '../../config/env';
 import { requestBinary } from '../../lib/http';
 import type { Manifest } from '../game/schemas';
 import { buildVisionCacheKey, resolveModelUrl } from './modelIdentity';
@@ -83,7 +83,7 @@ export async function getCachedVisionModel(
     return { cacheKey, uri, bytes: cached };
   }
 
-  const bytes = await requestBinary(resolveModelUrl(API_BASE_URL, vision.model_url), {
+  const bytes = await requestBinary(resolveModelUrl(getApiBaseUrl(), vision.model_url), {
     authHeader,
     absoluteUrl: true,
     timeoutMs: 30000,
