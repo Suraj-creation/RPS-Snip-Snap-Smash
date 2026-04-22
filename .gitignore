@@ -1,0 +1,23 @@
+# dependencies
+node_modules/
+mobile/node_modules/
+
+# Expo / generated web output
+.expo/
+mobile/.expo/
+dist/
+mobile/dist/
+web-build/
+
+# caches and bytecode
+__pycache__/
+*.py[cod]
+*.tsbuildinfo
+
+# logs
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# OS files
+.DS_Store
